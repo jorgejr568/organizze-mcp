@@ -122,7 +122,9 @@ func runHTTP(ctx context.Context, cfg *config.Config) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("organizze-mcp: shutdown: %v", err)
+		}
 		return nil
 	case err := <-errCh:
 		return err

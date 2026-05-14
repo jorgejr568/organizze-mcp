@@ -2,6 +2,11 @@
 
 A Model Context Protocol (MCP) server exposing the [Organizze](https://www.organizze.com.br/) REST API to LLM clients (Claude Desktop, Claude Code, etc.), built in Go with a layered Clean Architecture.
 
+## Status
+
+[![CI](https://github.com/jorgejr568/organizze-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jorgejr568/organizze-mcp/actions/workflows/ci.yml)
+[![Docker Hub](https://img.shields.io/docker/v/jorgejr568/organizze-mcp?label=docker&sort=semver)](https://hub.docker.com/r/jorgejr568/organizze-mcp)
+
 ## Architecture
 
 ```

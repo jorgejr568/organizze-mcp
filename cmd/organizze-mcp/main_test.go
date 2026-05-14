@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"io"
+	"log"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -70,6 +73,37 @@ func TestRunWithTransport_ServesOverInMemory(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not return after cancel")
 	}
+}
+
+func TestRunWithTransport_RedirectsLogToStderr(t *testing.T) {
+	cfg := &config.Config{
+		APIKey: "k", Email: "e@x.com", UserAgent: "Test (e@x.com)",
+		BaseURL: "http://127.0.0.1:1", HTTPTimeout: 5 * time.Second,
+		Transport: "stdio", HTTPAddr: ":0",
+	}
+	serverT, _ := mcpsdk.NewInMemoryTransports()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- runWithTransport(ctx, cfg, serverT, "test") }()
+
+	// Give the goroutine a moment to call log.SetOutput.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var writer io.Writer
+	for time.Now().Before(deadline) {
+		writer = log.Writer()
+		if writer == os.Stderr {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if writer != os.Stderr {
+		t.Errorf("log.Writer() = %T, want os.Stderr", writer)
+	}
+
+	cancel()
+	<-done
 }
 
 func TestRunHTTP_HealthzResponds(t *testing.T) {
