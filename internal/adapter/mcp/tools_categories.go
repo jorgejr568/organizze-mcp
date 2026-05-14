@@ -13,7 +13,7 @@ type CategoryService interface {
 	Get(ctx context.Context, id int64) (*domain.Category, error)
 	Create(ctx context.Context, params domain.CreateCategoryParams) (*domain.Category, error)
 	Update(ctx context.Context, id int64, params domain.UpdateCategoryParams) (*domain.Category, error)
-	Delete(ctx context.Context, id int64, replacementID *int64) error
+	Delete(ctx context.Context, id int64, replacementID *int64) (*domain.Category, error)
 }
 
 type ListCategoriesOutput struct {
@@ -55,8 +55,9 @@ type DeleteCategoryInput struct {
 }
 
 type DeleteCategoryOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted  bool             `json:"deleted"`
+	ID       int64            `json:"id"`
+	Category *domain.Category `json:"category,omitempty"`
 }
 
 func listCategoriesHandler(svc CategoryService) mcpsdk.ToolHandlerFor[struct{}, ListCategoriesOutput] {
@@ -101,10 +102,11 @@ func updateCategoryHandler(svc CategoryService) mcpsdk.ToolHandlerFor[UpdateCate
 
 func deleteCategoryHandler(svc CategoryService) mcpsdk.ToolHandlerFor[DeleteCategoryInput, DeleteCategoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCategoryInput) (*mcpsdk.CallToolResult, DeleteCategoryOutput, error) {
-		if err := svc.Delete(ctx, in.ID, in.ReplacementID); err != nil {
+		c, err := svc.Delete(ctx, in.ID, in.ReplacementID)
+		if err != nil {
 			return nil, DeleteCategoryOutput{}, err
 		}
-		return nil, DeleteCategoryOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteCategoryOutput{Deleted: true, ID: in.ID, Category: c}, nil
 	}
 }
 
@@ -127,6 +129,6 @@ func registerCategoryTools(s *mcpsdk.Server, svc CategoryService) {
 	}, updateCategoryHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_category",
-		Description: "Permanently delete an Organizze category by id. Optionally pass replacement_id to reassign affected transactions to that category.",
+		Description: "Permanently delete an Organizze category by id. Optionally pass replacement_id (numeric id of another category) to reassign affected transactions to that category — without this, Organizze falls back to the default category. The deleted category snapshot is returned in the 'category' field when the API provides one.",
 	}, deleteCategoryHandler(svc))
 }

@@ -68,9 +68,10 @@ func (e *RequestExecutor) Put(ctx context.Context, path string, body, out any) e
 	return e.do(ctx, http.MethodPut, path, body, out)
 }
 
-// Delete performs a DELETE. If body is non-nil it is JSON-encoded; if out is
-// non-nil the response body is decoded into it. Pass (nil, nil) for the
-// classic no-body / discard-response case.
+// Delete performs a DELETE. If body is non-nil it is JSON-encoded and sent as
+// the request body (some Organizze endpoints, e.g. DELETE /categories/:id with
+// replacement_id, require this). If out is non-nil the JSON response is decoded
+// into it; a 204 response is treated as success and leaves out untouched.
 func (e *RequestExecutor) Delete(ctx context.Context, path string, body, out any) error {
 	return e.do(ctx, http.MethodDelete, path, body, out)
 }
