@@ -29,4 +29,5 @@ type UpdateAccountParams struct {
 	Description *string `json:"description,omitempty"`
 	Default     *bool   `json:"default,omitempty"`
 	Type        *string `json:"type,omitempty"`
+	Archived    *bool   `json:"archived,omitempty"`
 }

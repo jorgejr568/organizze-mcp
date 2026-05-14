@@ -96,6 +96,27 @@ func TestAccountRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestAccountRepository_Update_SendsArchivedWhenSet(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":1,"name":"Itaú","type":"checking","archived":true}`)
+	})
+	repo := NewAccountRepository(exec)
+	archived := true
+	a, err := repo.Update(context.Background(), 1, domain.UpdateAccountParams{Archived: &archived})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if string(gotBody) != `{"archived":true}` {
+		t.Errorf("body = %q, want {\"archived\":true}", string(gotBody))
+	}
+	if a == nil || !a.Archived {
+		t.Errorf("returned = %+v", a)
+	}
+}
+
 func TestAccountRepository_Delete(t *testing.T) {
 	called := false
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
@@ -106,10 +127,25 @@ func TestAccountRepository_Delete(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	repo := NewAccountRepository(exec)
-	if err := repo.Delete(context.Background(), 18); err != nil {
+	if _, err := repo.Delete(context.Background(), 18); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if !called {
 		t.Error("handler not invoked")
+	}
+}
+
+func TestAccountRepository_Delete_ReturnsDeletedAccount(t *testing.T) {
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":18,"name":"Itaú","type":"checking","archived":false,"default":true}`)
+	})
+	repo := NewAccountRepository(exec)
+	a, err := repo.Delete(context.Background(), 18)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if a == nil || a.ID != 18 || a.Name != "Itaú" {
+		t.Errorf("returned = %+v", a)
 	}
 }

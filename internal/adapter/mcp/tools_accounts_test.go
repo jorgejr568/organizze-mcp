@@ -46,9 +46,9 @@ func (f *fakeAccountSvc) Update(_ context.Context, id int64, p domain.UpdateAcco
 	f.updated.id, f.updated.params = id, p
 	return &domain.Account{ID: id}, nil
 }
-func (f *fakeAccountSvc) Delete(_ context.Context, id int64) error {
+func (f *fakeAccountSvc) Delete(_ context.Context, id int64) (*domain.Account, error) {
 	f.deletedID = id
-	return nil
+	return &domain.Account{ID: id}, nil
 }
 
 type nopAccountSvc struct{}
@@ -61,7 +61,9 @@ func (nopAccountSvc) Create(context.Context, domain.CreateAccountParams) (*domai
 func (nopAccountSvc) Update(context.Context, int64, domain.UpdateAccountParams) (*domain.Account, error) {
 	return &domain.Account{}, nil
 }
-func (nopAccountSvc) Delete(context.Context, int64) error { return nil }
+func (nopAccountSvc) Delete(context.Context, int64) (*domain.Account, error) {
+	return &domain.Account{}, nil
+}
 
 func TestListAccountsHandler(t *testing.T) {
 	svc := &fakeAccountSvc{list: []domain.Account{{ID: 1, Name: "Checking"}}}
@@ -137,5 +139,8 @@ func TestDeleteAccountHandler(t *testing.T) {
 	}
 	if !out.Deleted || out.ID != 18 || svc.deletedID != 18 {
 		t.Errorf("out=%+v svc.deletedID=%d", out, svc.deletedID)
+	}
+	if out.Account == nil || out.Account.ID != 18 {
+		t.Errorf("out.Account = %+v, want snapshot with ID=18", out.Account)
 	}
 }
