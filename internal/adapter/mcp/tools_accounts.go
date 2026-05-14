@@ -11,7 +11,12 @@ import (
 type AccountService interface {
 	List(ctx context.Context) ([]domain.Account, error)
 	Get(ctx context.Context, id int64) (*domain.Account, error)
+	Create(ctx context.Context, params domain.CreateAccountParams) (*domain.Account, error)
+	Update(ctx context.Context, id int64, params domain.UpdateAccountParams) (*domain.Account, error)
+	Delete(ctx context.Context, id int64) error
 }
+
+// ---------- list / get ----------
 
 type ListAccountsOutput struct {
 	Accounts []domain.Account `json:"accounts"`
@@ -24,6 +29,46 @@ type GetAccountInput struct {
 type GetAccountOutput struct {
 	Account domain.Account `json:"account"`
 }
+
+// ---------- create ----------
+
+type CreateAccountInput struct {
+	Name        string `json:"name"                  jsonschema:"Account name."`
+	Type        string `json:"type"                  jsonschema:"Account type: checking, savings, or other."`
+	Description string `json:"description,omitempty" jsonschema:"Optional description."`
+	Default     bool   `json:"default,omitempty"     jsonschema:"Whether to mark as the default account."`
+}
+
+type CreateAccountOutput struct {
+	Account domain.Account `json:"account"`
+}
+
+// ---------- update ----------
+
+type UpdateAccountInput struct {
+	ID          int64   `json:"id"                    jsonschema:"The numeric Organizze account id to update."`
+	Name        *string `json:"name,omitempty"        jsonschema:"New account name."`
+	Description *string `json:"description,omitempty" jsonschema:"New description."`
+	Default     *bool   `json:"default,omitempty"     jsonschema:"New default flag."`
+	Type        *string `json:"type,omitempty"        jsonschema:"New type."`
+}
+
+type UpdateAccountOutput struct {
+	Account domain.Account `json:"account"`
+}
+
+// ---------- delete ----------
+
+type DeleteAccountInput struct {
+	ID int64 `json:"id" jsonschema:"The numeric Organizze account id to delete."`
+}
+
+type DeleteAccountOutput struct {
+	Deleted bool  `json:"deleted"`
+	ID      int64 `json:"id"`
+}
+
+// ---------- handlers ----------
 
 func listAccountsHandler(svc AccountService) mcpsdk.ToolHandlerFor[struct{}, ListAccountsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListAccountsOutput, error) {
@@ -45,6 +90,39 @@ func getAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[GetAccountInput
 	}
 }
 
+func createAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[CreateAccountInput, CreateAccountOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateAccountInput) (*mcpsdk.CallToolResult, CreateAccountOutput, error) {
+		a, err := svc.Create(ctx, domain.CreateAccountParams{
+			Name: in.Name, Type: in.Type, Description: in.Description, Default: in.Default,
+		})
+		if err != nil {
+			return nil, CreateAccountOutput{}, err
+		}
+		return nil, CreateAccountOutput{Account: *a}, nil
+	}
+}
+
+func updateAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[UpdateAccountInput, UpdateAccountOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateAccountInput) (*mcpsdk.CallToolResult, UpdateAccountOutput, error) {
+		a, err := svc.Update(ctx, in.ID, domain.UpdateAccountParams{
+			Name: in.Name, Description: in.Description, Default: in.Default, Type: in.Type,
+		})
+		if err != nil {
+			return nil, UpdateAccountOutput{}, err
+		}
+		return nil, UpdateAccountOutput{Account: *a}, nil
+	}
+}
+
+func deleteAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[DeleteAccountInput, DeleteAccountOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteAccountInput) (*mcpsdk.CallToolResult, DeleteAccountOutput, error) {
+		if err := svc.Delete(ctx, in.ID); err != nil {
+			return nil, DeleteAccountOutput{}, err
+		}
+		return nil, DeleteAccountOutput{Deleted: true, ID: in.ID}, nil
+	}
+}
+
 func registerAccountTools(s *mcpsdk.Server, svc AccountService) {
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "list_accounts",
@@ -54,4 +132,16 @@ func registerAccountTools(s *mcpsdk.Server, svc AccountService) {
 		Name:        "get_account",
 		Description: "Fetch a single Organizze account by id.",
 	}, getAccountHandler(svc))
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "create_account",
+		Description: "Create a new Organizze bank/cash account. Required: name, type (checking|savings|other).",
+	}, createAccountHandler(svc))
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "update_account",
+		Description: "Update fields on an existing Organizze account. Only fields you provide are changed.",
+	}, updateAccountHandler(svc))
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_account",
+		Description: "Permanently delete an Organizze account by id.",
+	}, deleteAccountHandler(svc))
 }
