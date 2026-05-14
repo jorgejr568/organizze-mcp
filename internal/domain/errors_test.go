@@ -21,3 +21,16 @@ func TestWrappedSentinelMatches(t *testing.T) {
 		t.Error("errors.Is must traverse wrapping")
 	}
 }
+
+func TestErrRateLimited_IsDistinctSentinel(t *testing.T) {
+	if errors.Is(ErrRateLimited, ErrUpstream) {
+		t.Error("ErrRateLimited must not match ErrUpstream")
+	}
+	if errors.Is(ErrRateLimited, ErrNotFound) {
+		t.Error("ErrRateLimited must not match ErrNotFound")
+	}
+	wrapped := fmt.Errorf("organizze: throttled: %w", ErrRateLimited)
+	if !errors.Is(wrapped, ErrRateLimited) {
+		t.Error("errors.Is must traverse wrapping")
+	}
+}
