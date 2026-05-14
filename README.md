@@ -84,21 +84,28 @@ ORGANIZZE_API_KEY=... ORGANIZZE_EMAIL=... ORGANIZZE_USER_AGENT='App (e@x.com)' \
   ./bin/organizze-mcp
 ```
 
-## Tool catalogue
+## Tool catalogue (16 tools)
 
-16 tools. `amount_cents` is **negative for expenses, positive for income**.
+`amount_cents` is **negative for expenses, positive for income**.
 
-| Tool | Service.Method |
-|---|---|
-| `get_user` | UserService.Get |
-| `list_accounts` / `get_account` | AccountService.{List, Get} |
-| `list_categories` / `get_category` | CategoryService.{List, Get} |
-| `list_budgets` | BudgetService.List (year/month routing) |
-| `list_credit_cards` / `get_credit_card` | CreditCardService.{List, Get} |
-| `list_credit_card_invoices` / `get_credit_card_invoice` | InvoiceService.{List, Get} |
-| `list_transfers` | TransferService.List |
-| `list_transactions` / `get_transaction` | TransactionService.{List, Get} |
-| `create_transaction` / `update_transaction` / `delete_transaction` | TransactionService.{Create, Update, Delete} |
+| # | Tool | Operation |
+|---|------|-----------|
+| 1 | `get_user` | UserService.Get |
+| 2 | `list_accounts` | AccountService.List |
+| 3 | `get_account` | AccountService.Get |
+| 4 | `list_categories` | CategoryService.List |
+| 5 | `get_category` | CategoryService.Get |
+| 6 | `list_budgets` | BudgetService.List (period routing) |
+| 7 | `list_credit_cards` | CreditCardService.List |
+| 8 | `get_credit_card` | CreditCardService.Get |
+| 9 | `list_credit_card_invoices` | InvoiceService.List |
+| 10 | `get_credit_card_invoice` | InvoiceService.Get |
+| 11 | `list_transfers` | TransferService.List |
+| 12 | `list_transactions` | TransactionService.List |
+| 13 | `get_transaction` | TransactionService.Get |
+| 14 | `create_transaction` | TransactionService.Create |
+| 15 | `update_transaction` | TransactionService.Update |
+| 16 | `delete_transaction` | TransactionService.Delete |
 
 ## Development
 
@@ -112,4 +119,4 @@ make docker      # container image
 
 ## License
 
-MIT (or your preferred license).
+MIT — see [`LICENSE`](LICENSE).
