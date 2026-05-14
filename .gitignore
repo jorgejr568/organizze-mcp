@@ -1,0 +1,11 @@
+/bin/
+/organizze-mcp
+*.exe
+coverage.out
+coverage.html
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.env
+.env.local
