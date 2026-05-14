@@ -43,7 +43,7 @@ cmd ──► adapter/mcp ──► usecase ──► domain
         "-e", "ORGANIZZE_API_KEY",
         "-e", "ORGANIZZE_EMAIL",
         "-e", "ORGANIZZE_USER_AGENT",
-        "ghcr.io/jorgejr568/organizze-mcp:latest"
+        "jorgejr568/organizze-mcp:latest"
       ],
       "env": {
         "ORGANIZZE_API_KEY": "your-token-here",
@@ -64,7 +64,7 @@ docker run -d --name organizze-mcp \
   -e ORGANIZZE_API_KEY=... \
   -e ORGANIZZE_EMAIL=... \
   -e "ORGANIZZE_USER_AGENT=YourApp (you@example.com)" \
-  ghcr.io/jorgejr568/organizze-mcp:latest
+  jorgejr568/organizze-mcp:latest
 ```
 
 Endpoints: `http://localhost:8080/mcp` (MCP), `http://localhost:8080/healthz` (liveness).

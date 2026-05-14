@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY . .
 
+ARG TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
