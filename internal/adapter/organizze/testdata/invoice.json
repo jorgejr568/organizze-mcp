@@ -1,0 +1,13 @@
+{
+  "id": 100,
+  "date": "2026-05-27",
+  "starting_date": "2026-04-21",
+  "closing_date": "2026-05-20",
+  "amount_cents": 120000,
+  "payment_amount_cents": 0,
+  "balance_cents": 120000,
+  "previous_balance_cents": 0,
+  "credit_card_id": 1,
+  "transactions": [],
+  "payments": []
+}

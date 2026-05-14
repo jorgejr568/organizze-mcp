@@ -1,0 +1,13 @@
+{
+  "id": 800,
+  "description": "Move savings",
+  "date": "2026-05-01",
+  "paid": true,
+  "amount_cents": 250000,
+  "account_id": 1,
+  "oposite_account_id": 2,
+  "oposite_transaction_id": 801,
+  "category_id": 99,
+  "notes": null,
+  "recurrence_id": null
+}
