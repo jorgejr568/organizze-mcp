@@ -52,5 +52,5 @@ func (r *AccountRepository) Update(ctx context.Context, id int64, params domain.
 
 // Delete issues a DELETE.
 func (r *AccountRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/accounts/%d", id))
+	return r.exec.Delete(ctx, fmt.Sprintf("/accounts/%d", id), nil, nil)
 }
