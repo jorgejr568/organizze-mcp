@@ -41,9 +41,9 @@ func (f *fakeCreditCardSvc) Update(_ context.Context, id int64, p domain.UpdateC
 	f.updated.id, f.updated.params = id, p
 	return &domain.CreditCard{ID: id}, nil
 }
-func (f *fakeCreditCardSvc) Delete(_ context.Context, id int64) error {
+func (f *fakeCreditCardSvc) Delete(_ context.Context, id int64) (*domain.CreditCard, error) {
 	f.deletedID = id
-	return nil
+	return &domain.CreditCard{ID: id, Name: "Visa Exclusive", Archived: true}, nil
 }
 
 type nopCreditCardSvc struct{}
@@ -58,7 +58,9 @@ func (nopCreditCardSvc) Create(context.Context, domain.CreateCreditCardParams) (
 func (nopCreditCardSvc) Update(context.Context, int64, domain.UpdateCreditCardParams) (*domain.CreditCard, error) {
 	return &domain.CreditCard{}, nil
 }
-func (nopCreditCardSvc) Delete(context.Context, int64) error { return nil }
+func (nopCreditCardSvc) Delete(context.Context, int64) (*domain.CreditCard, error) {
+	return &domain.CreditCard{}, nil
+}
 
 func TestCreditCardHandlers(t *testing.T) {
 	svc := &fakeCreditCardSvc{}
@@ -119,5 +121,8 @@ func TestDeleteCreditCardHandler(t *testing.T) {
 	}
 	if !out.Deleted || out.ID != 7 || svc.deletedID != 7 {
 		t.Errorf("out=%+v svc.deletedID=%d", out, svc.deletedID)
+	}
+	if out.CreditCard == nil || out.CreditCard.ID != 7 || !out.CreditCard.Archived {
+		t.Errorf("out.CreditCard = %+v, want deleted snapshot", out.CreditCard)
 	}
 }
