@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-14
+
+### Added
+- 12 new MCP tools bringing four resources to full CRUD parity with the Organizze REST API. Tool catalogue grows from 16 to 28.
+  - **Accounts**: `create_account`, `update_account`, `delete_account`.
+  - **Categories**: `create_category`, `update_category`, `delete_category`. `delete_category` accepts an optional `replacement_id` to reassign affected transactions (Organizze's `replacement_id` query parameter).
+  - **Credit cards**: `create_credit_card`, `update_credit_card`, `delete_credit_card`. `update_credit_card` exposes `update_invoices_since` (YYYY-MM-DD) so Organizze retroactively regenerates invoices from that date.
+  - **Transfers**: `create_transfer`, `update_transfer`, `delete_transfer`. Tool descriptions document that credit cards are not accepted as source or destination, and that updates can only modify description/notes/tags (Organizze API constraint).
+- `domain.Create*Params` / `Update*Params` value objects for accounts, categories, credit_cards, transfers. Update params use pointer fields so unset fields are omitted on PUT.
+- Service-layer validation wraps `domain.ErrValidation` for required fields per resource (e.g. credit card `due_day` / `closing_day` in [1, 31], transfer non-zero `amount_cents`).
+- Integration test coverage extended to roundtrip every one of the 28 tools through the MCP protocol against a fake Organizze server.
+
+### Changed
+- `internal/usecase/{account,category,credit_card,transfer}.go` now expose `*Reader` + `*Writer` + composed `*Repository` interfaces. The concrete adapter structs satisfy them automatically; no composition-root changes were required.
+- README tool catalogue extended from 16 to 28 rows, with a `Mutating?` column.
+
 ## [0.2.0] - 2026-05-14
 
 ### Added
