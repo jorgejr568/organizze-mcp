@@ -131,10 +131,25 @@ func TestCreditCardRepository_Delete(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	repo := NewCreditCardRepository(exec)
-	if err := repo.Delete(context.Background(), 7); err != nil {
+	if _, err := repo.Delete(context.Background(), 7); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if !called {
 		t.Error("handler not invoked")
+	}
+}
+
+func TestCreditCardRepository_Delete_ReturnsDeletedCard(t *testing.T) {
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":3,"name":"Visa Exclusive","closing_day":4,"due_day":17,"limit_cents":1200000,"archived":true}`)
+	})
+	repo := NewCreditCardRepository(exec)
+	cc, err := repo.Delete(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if cc == nil || cc.ID != 3 || !cc.Archived {
+		t.Errorf("returned = %+v", cc)
 	}
 }

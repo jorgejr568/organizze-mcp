@@ -15,7 +15,7 @@ type CreditCardReader interface {
 type CreditCardWriter interface {
 	Create(ctx context.Context, params domain.CreateCreditCardParams) (*domain.CreditCard, error)
 	Update(ctx context.Context, id int64, params domain.UpdateCreditCardParams) (*domain.CreditCard, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.CreditCard, error)
 }
 
 type CreditCardRepository interface {
@@ -55,6 +55,6 @@ func (s *CreditCardService) Update(ctx context.Context, id int64, p domain.Updat
 	return s.repo.Update(ctx, id, p)
 }
 
-func (s *CreditCardService) Delete(ctx context.Context, id int64) error {
+func (s *CreditCardService) Delete(ctx context.Context, id int64) (*domain.CreditCard, error) {
 	return s.repo.Delete(ctx, id)
 }

@@ -13,7 +13,7 @@ type CreditCardService interface {
 	Get(ctx context.Context, id int64) (*domain.CreditCard, error)
 	Create(ctx context.Context, params domain.CreateCreditCardParams) (*domain.CreditCard, error)
 	Update(ctx context.Context, id int64, params domain.UpdateCreditCardParams) (*domain.CreditCard, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.CreditCard, error)
 }
 
 type ListCreditCardsOutput struct {
@@ -64,8 +64,9 @@ type DeleteCreditCardInput struct {
 }
 
 type DeleteCreditCardOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted    bool               `json:"deleted"`
+	ID         int64              `json:"id"`
+	CreditCard *domain.CreditCard `json:"credit_card,omitempty"`
 }
 
 func listCreditCardsHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[struct{}, ListCreditCardsOutput] {
@@ -119,10 +120,11 @@ func updateCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[Update
 
 func deleteCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[DeleteCreditCardInput, DeleteCreditCardOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCreditCardInput) (*mcpsdk.CallToolResult, DeleteCreditCardOutput, error) {
-		if err := svc.Delete(ctx, in.ID); err != nil {
+		cc, err := svc.Delete(ctx, in.ID)
+		if err != nil {
 			return nil, DeleteCreditCardOutput{}, err
 		}
-		return nil, DeleteCreditCardOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteCreditCardOutput{Deleted: true, ID: in.ID, CreditCard: cc}, nil
 	}
 }
 
