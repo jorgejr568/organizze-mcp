@@ -13,3 +13,20 @@ type Account struct {
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
+
+// CreateAccountParams are the inputs to AccountService.Create. The Organizze
+// API requires name and type; description and default are optional.
+type CreateAccountParams struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	Default     bool   `json:"default,omitempty"`
+}
+
+// UpdateAccountParams describes a partial update; nil pointers are omitted.
+type UpdateAccountParams struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Default     *bool   `json:"default,omitempty"`
+	Type        *string `json:"type,omitempty"`
+}
