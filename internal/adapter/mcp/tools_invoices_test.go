@@ -23,6 +23,10 @@ func (f *fakeInvoiceSvc) Get(_ context.Context, cardID, invID int64) (*domain.In
 	f.gotCard, f.gotInvoice = cardID, invID
 	return &domain.Invoice{ID: invID}, nil
 }
+func (f *fakeInvoiceSvc) Payment(_ context.Context, cardID, invID int64) (*domain.Transaction, error) {
+	f.gotCard, f.gotInvoice = cardID, invID
+	return &domain.Transaction{ID: 1033, Description: "Pagamento fatura", AccountID: 3, CategoryID: 21}, nil
+}
 
 type nopInvoiceSvc struct{}
 
@@ -31,6 +35,9 @@ func (nopInvoiceSvc) List(context.Context, int64, domain.ListInvoicesFilter) ([]
 }
 func (nopInvoiceSvc) Get(context.Context, int64, int64) (*domain.Invoice, error) {
 	return &domain.Invoice{}, nil
+}
+func (nopInvoiceSvc) Payment(context.Context, int64, int64) (*domain.Transaction, error) {
+	return &domain.Transaction{}, nil
 }
 
 func TestInvoiceHandlers(t *testing.T) {
@@ -49,5 +56,12 @@ func TestInvoiceHandlers(t *testing.T) {
 	hGet := getInvoiceHandler(svc)
 	if _, out, err := hGet(context.Background(), &mcpsdk.CallToolRequest{}, GetInvoiceInput{CreditCardID: 9, InvoiceID: 100}); err != nil || out.Invoice.ID != 100 {
 		t.Fatalf("get: out=%+v err=%v", out, err)
+	}
+	hPay := getInvoicePaymentHandler(svc)
+	if _, out, err := hPay(context.Background(), &mcpsdk.CallToolRequest{}, GetInvoicePaymentInput{CreditCardID: 3, InvoiceID: 186}); err != nil || out.Payment.ID != 1033 || out.Payment.Description != "Pagamento fatura" {
+		t.Fatalf("payment: out=%+v err=%v", out, err)
+	}
+	if svc.gotCard != 3 || svc.gotInvoice != 186 {
+		t.Errorf("payment forwarded card=%d inv=%d", svc.gotCard, svc.gotInvoice)
 	}
 }

@@ -43,3 +43,13 @@ func (r *InvoiceRepository) Get(ctx context.Context, cardID, invoiceID int64) (*
 	}
 	return &inv, nil
 }
+
+// Payment returns the consolidated payment Transaction for an invoice
+// (GET /credit_cards/{cardID}/invoices/{invoiceID}/payments).
+func (r *InvoiceRepository) Payment(ctx context.Context, cardID, invoiceID int64) (*domain.Transaction, error) {
+	var tx domain.Transaction
+	if err := r.exec.Get(ctx, fmt.Sprintf("/credit_cards/%d/invoices/%d/payments", cardID, invoiceID), &tx); err != nil {
+		return nil, err
+	}
+	return &tx, nil
+}

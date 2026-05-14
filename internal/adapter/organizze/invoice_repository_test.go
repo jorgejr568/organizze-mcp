@@ -77,3 +77,23 @@ func TestInvoiceRepository_Get(t *testing.T) {
 		t.Errorf("got %+v", inv)
 	}
 }
+
+func TestInvoiceRepository_Payment_HitsPaymentsURL(t *testing.T) {
+	var gotPath string
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":1033,"description":"Pagamento fatura","date":"2015-09-16","paid":true,"amount_cents":0,"account_id":3,"category_id":21}`)
+	})
+	repo := NewInvoiceRepository(exec)
+	tx, err := repo.Payment(context.Background(), 3, 186)
+	if err != nil {
+		t.Fatalf("Payment: %v", err)
+	}
+	if gotPath != "/credit_cards/3/invoices/186/payments" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if tx == nil || tx.ID != 1033 || tx.Description != "Pagamento fatura" {
+		t.Errorf("returned = %+v", tx)
+	}
+}

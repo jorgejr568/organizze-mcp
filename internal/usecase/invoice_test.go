@@ -18,6 +18,9 @@ func (f *fakeInvoiceRepo) List(_ context.Context, _ int64, filter domain.ListInv
 func (f *fakeInvoiceRepo) Get(_ context.Context, _ int64, _ int64) (*domain.Invoice, error) {
 	return &domain.Invoice{ID: 1}, nil
 }
+func (f *fakeInvoiceRepo) Payment(_ context.Context, _ int64, invoiceID int64) (*domain.Transaction, error) {
+	return &domain.Transaction{ID: 1033, Description: "Pagamento fatura", CategoryID: invoiceID}, nil
+}
 
 func TestInvoiceService(t *testing.T) {
 	repo := &fakeInvoiceRepo{}
@@ -31,5 +34,8 @@ func TestInvoiceService(t *testing.T) {
 	}
 	if v, _ := svc.Get(context.Background(), 9, 1); v.ID != 1 {
 		t.Errorf("Get: %+v", v)
+	}
+	if tx, _ := svc.Payment(context.Background(), 9, 100); tx == nil || tx.ID != 1033 {
+		t.Errorf("Payment: %+v", tx)
 	}
 }
