@@ -13,7 +13,7 @@ type AccountService interface {
 	Get(ctx context.Context, id int64) (*domain.Account, error)
 	Create(ctx context.Context, params domain.CreateAccountParams) (*domain.Account, error)
 	Update(ctx context.Context, id int64, params domain.UpdateAccountParams) (*domain.Account, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.Account, error)
 }
 
 // ---------- list / get ----------
@@ -65,8 +65,9 @@ type DeleteAccountInput struct {
 }
 
 type DeleteAccountOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted bool            `json:"deleted"`
+	ID      int64           `json:"id"`
+	Account *domain.Account `json:"account,omitempty"`
 }
 
 // ---------- handlers ----------
@@ -117,10 +118,11 @@ func updateAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[UpdateAccoun
 
 func deleteAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[DeleteAccountInput, DeleteAccountOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteAccountInput) (*mcpsdk.CallToolResult, DeleteAccountOutput, error) {
-		if err := svc.Delete(ctx, in.ID); err != nil {
+		a, err := svc.Delete(ctx, in.ID)
+		if err != nil {
 			return nil, DeleteAccountOutput{}, err
 		}
-		return nil, DeleteAccountOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteAccountOutput{Deleted: true, ID: in.ID, Account: a}, nil
 	}
 }
 

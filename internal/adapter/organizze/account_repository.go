@@ -3,6 +3,7 @@ package organizze
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
 )
@@ -50,7 +51,11 @@ func (r *AccountRepository) Update(ctx context.Context, id int64, params domain.
 	return &a, nil
 }
 
-// Delete issues a DELETE.
-func (r *AccountRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/accounts/%d", id))
+// Delete issues a DELETE and returns the deleted account snapshot as echoed by Organizze.
+func (r *AccountRepository) Delete(ctx context.Context, id int64) (*domain.Account, error) {
+	var out domain.Account
+	if err := r.exec.do(ctx, http.MethodDelete, fmt.Sprintf("/accounts/%d", id), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

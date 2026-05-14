@@ -127,10 +127,25 @@ func TestAccountRepository_Delete(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	repo := NewAccountRepository(exec)
-	if err := repo.Delete(context.Background(), 18); err != nil {
+	if _, err := repo.Delete(context.Background(), 18); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if !called {
 		t.Error("handler not invoked")
+	}
+}
+
+func TestAccountRepository_Delete_ReturnsDeletedAccount(t *testing.T) {
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":18,"name":"Itaú","type":"checking","archived":false,"default":true}`)
+	})
+	repo := NewAccountRepository(exec)
+	a, err := repo.Delete(context.Background(), 18)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if a == nil || a.ID != 18 || a.Name != "Itaú" {
+		t.Errorf("returned = %+v", a)
 	}
 }

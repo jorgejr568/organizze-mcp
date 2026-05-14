@@ -32,9 +32,9 @@ func (f *fakeAccountRepo) Update(_ context.Context, id int64, _ domain.UpdateAcc
 	f.updatedID = id
 	return &domain.Account{ID: id}, nil
 }
-func (f *fakeAccountRepo) Delete(_ context.Context, id int64) error {
+func (f *fakeAccountRepo) Delete(_ context.Context, id int64) (*domain.Account, error) {
 	f.deletedID = id
-	return nil
+	return &domain.Account{ID: id}, nil
 }
 
 func TestAccountService_DelegatesBothCalls(t *testing.T) {
@@ -99,10 +99,14 @@ func TestAccountService_UpdateDelete(t *testing.T) {
 	if repo.updatedID != 18 {
 		t.Errorf("repo.updatedID = %d", repo.updatedID)
 	}
-	if err := svc.Delete(context.Background(), 18); err != nil {
+	deleted, err := svc.Delete(context.Background(), 18)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if repo.deletedID != 18 {
 		t.Errorf("repo.deletedID = %d", repo.deletedID)
+	}
+	if deleted == nil || deleted.ID != 18 {
+		t.Errorf("deleted = %+v", deleted)
 	}
 }
