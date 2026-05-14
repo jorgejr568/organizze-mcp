@@ -61,5 +61,5 @@ func (r *CategoryRepository) Delete(ctx context.Context, id int64, replacementID
 		q.Set("replacement_id", strconv.FormatInt(*replacementID, 10))
 		path += "?" + q.Encode()
 	}
-	return r.exec.Delete(ctx, path)
+	return r.exec.Delete(ctx, path, nil, nil)
 }

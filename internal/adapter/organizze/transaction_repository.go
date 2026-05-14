@@ -72,5 +72,5 @@ func (r *TransactionRepository) Update(ctx context.Context, id int64, params dom
 
 // Delete issues a DELETE.
 func (r *TransactionRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/transactions/%d", id))
+	return r.exec.Delete(ctx, fmt.Sprintf("/transactions/%d", id), nil, nil)
 }
