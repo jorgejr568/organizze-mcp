@@ -40,15 +40,21 @@ type GetTransactionOutput struct {
 // ---------- create ----------
 
 type CreateTransactionInput struct {
-	Description string       `json:"description" jsonschema:"Short transaction description."`
-	Date        string       `json:"date"        jsonschema:"YYYY-MM-DD."`
-	AmountCents int64        `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income."`
-	AccountID   int64        `json:"account_id"   jsonschema:"Source account id."`
-	CategoryID  int64        `json:"category_id"  jsonschema:"Category id."`
-	Paid        bool         `json:"paid"         jsonschema:"Whether the transaction is already paid."`
-	Notes       string       `json:"notes,omitempty"      jsonschema:"Optional notes."`
-	ContactID   *int64       `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
-	Tags        []domain.Tag `json:"tags,omitempty"      jsonschema:"Optional tags."`
+	Description string           `json:"description" jsonschema:"Short transaction description."`
+	Date        string           `json:"date"        jsonschema:"YYYY-MM-DD."`
+	AmountCents int64            `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income."`
+	AccountID   int64            `json:"account_id"   jsonschema:"Source account id."`
+	CategoryID  int64            `json:"category_id"  jsonschema:"Category id."`
+	Paid        bool             `json:"paid"         jsonschema:"Whether the transaction is already paid."`
+	Notes       string           `json:"notes,omitempty"      jsonschema:"Optional notes."`
+	ContactID   *int64           `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
+	Tags        []domain.Tag     `json:"tags,omitempty"      jsonschema:"Optional tags."`
+	Recurrence  *RecurrenceInput `json:"recurrence,omitempty" jsonschema:"Optional. Set to create a fixed recurring transaction. Organizze will schedule the entry at the given periodicity and the response will carry recurring=true."`
+}
+
+// RecurrenceInput selects the cadence for a fixed recurring transaction.
+type RecurrenceInput struct {
+	Periodicity string `json:"periodicity" jsonschema:"One of: weekly, biweekly, monthly, bimonthly, trimonthly, yearly."`
 }
 
 type CreateTransactionOutput struct {
@@ -111,11 +117,17 @@ func getTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[GetTran
 
 func createTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[CreateTransactionInput, CreateTransactionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateTransactionInput) (*mcpsdk.CallToolResult, CreateTransactionOutput, error) {
-		tx, err := svc.Create(ctx, domain.CreateTransactionParams{
+		params := domain.CreateTransactionParams{
 			Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
 			AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
 			Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
-		})
+		}
+		if in.Recurrence != nil {
+			params.Recurrence = &domain.RecurrenceAttributes{
+				Periodicity: domain.Periodicity(in.Recurrence.Periodicity),
+			}
+		}
+		tx, err := svc.Create(ctx, params)
 		if err != nil {
 			return nil, CreateTransactionOutput{}, err
 		}
@@ -157,7 +169,7 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 	}, getTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "create_transaction",
-		Description: "Create a new Organizze transaction. amount_cents is negative for expenses, positive for income.",
+		Description: "Create a new Organizze transaction. amount_cents is negative for expenses, positive for income. Pass an optional `recurrence` object with `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly) to create a fixed recurring transaction.",
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_transaction",

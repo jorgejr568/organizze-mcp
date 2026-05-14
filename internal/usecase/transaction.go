@@ -72,5 +72,8 @@ func validateCreate(p domain.CreateTransactionParams) error {
 	case p.CategoryID == 0:
 		return fmt.Errorf("%w: category_id is required", domain.ErrValidation)
 	}
+	if p.Recurrence != nil && !p.Recurrence.Periodicity.Valid() {
+		return fmt.Errorf("%w: recurrence.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
+	}
 	return nil
 }

@@ -74,6 +74,51 @@ func TestTransactionRepository_Create(t *testing.T) {
 	}
 }
 
+func TestTransactionRepository_Create_IncludesRecurrenceAttributes(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":97,"description":"Despesa fixa","recurring":true}`)
+	})
+	repo := NewTransactionRepository(exec)
+	_, err := repo.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "Despesa fixa", Date: "2026-05-14", AmountCents: -10000,
+		AccountID: 3, CategoryID: 21,
+		Recurrence: &domain.RecurrenceAttributes{Periodicity: domain.PeriodicityMonthly},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	rec, ok := raw["recurrence_attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("recurrence_attributes missing from body: %v", raw)
+	}
+	if rec["periodicity"] != "monthly" {
+		t.Errorf("periodicity = %v, want monthly", rec["periodicity"])
+	}
+}
+
+func TestTransactionRepository_Create_OmitsRecurrenceWhenNil(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":1}`)
+	})
+	repo := NewTransactionRepository(exec)
+	_, err := repo.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "Coffee", Date: "2026-05-14", AmountCents: -1500,
+		AccountID: 1, CategoryID: 10,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, has := raw["recurrence_attributes"]; has {
+		t.Errorf("recurrence_attributes should be omitted when nil; body=%v", raw)
+	}
+}
+
 func TestTransactionRepository_Update_SendsOnlySetFields(t *testing.T) {
 	var raw map[string]any
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
