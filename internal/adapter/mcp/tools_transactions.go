@@ -71,16 +71,18 @@ type CreateTransactionOutput struct {
 // ---------- update ----------
 
 type UpdateTransactionInput struct {
-	ID          int64        `json:"id" jsonschema:"The numeric transaction id to update."`
-	Description *string      `json:"description,omitempty"  jsonschema:"New description."`
-	Date        *string      `json:"date,omitempty"         jsonschema:"New date YYYY-MM-DD."`
-	AmountCents *int64       `json:"amount_cents,omitempty" jsonschema:"New amount in cents."`
-	AccountID   *int64       `json:"account_id,omitempty"   jsonschema:"New account id."`
-	CategoryID  *int64       `json:"category_id,omitempty"  jsonschema:"New category id."`
-	Paid        *bool        `json:"paid,omitempty"         jsonschema:"New paid flag."`
-	Notes       *string      `json:"notes,omitempty"        jsonschema:"New notes."`
-	ContactID   *int64       `json:"contact_id,omitempty"   jsonschema:"New contact id."`
-	Tags        []domain.Tag `json:"tags,omitempty"         jsonschema:"Replacement tag list."`
+	ID           int64        `json:"id" jsonschema:"The numeric transaction id to update."`
+	Description  *string      `json:"description,omitempty"  jsonschema:"New description."`
+	Date         *string      `json:"date,omitempty"         jsonschema:"New date YYYY-MM-DD."`
+	AmountCents  *int64       `json:"amount_cents,omitempty" jsonschema:"New amount in cents."`
+	AccountID    *int64       `json:"account_id,omitempty"   jsonschema:"New account id."`
+	CategoryID   *int64       `json:"category_id,omitempty"  jsonschema:"New category id."`
+	Paid         *bool        `json:"paid,omitempty"         jsonschema:"New paid flag."`
+	Notes        *string      `json:"notes,omitempty"        jsonschema:"New notes."`
+	ContactID    *int64       `json:"contact_id,omitempty"   jsonschema:"New contact id."`
+	Tags         []domain.Tag `json:"tags,omitempty"         jsonschema:"Replacement tag list."`
+	UpdateFuture *bool        `json:"update_future,omitempty" jsonschema:"For recurring/installment series: also apply this update to the current and all FUTURE occurrences."`
+	UpdateAll    *bool        `json:"update_all,omitempty"    jsonschema:"For recurring/installment series: also apply this update to ALL occurrences, including past ones. May alter the account balance if past entries were already paid."`
 }
 
 type UpdateTransactionOutput struct {
@@ -154,6 +156,7 @@ func updateTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Upda
 			Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
 			AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
 			Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
+			UpdateFuture: in.UpdateFuture, UpdateAll: in.UpdateAll,
 		})
 		if err != nil {
 			return nil, UpdateTransactionOutput{}, err
@@ -186,7 +189,7 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_transaction",
-		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged (not cleared). To clear notes, pass an empty string; to replace tags, pass the full new tag list (omitting tags leaves them alone, but passing an empty array clears them).",
+		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged. For recurring (fixa) or installment (parcelada) series, set update_future=true to propagate the change to this and all future occurrences, or update_all=true to propagate to every occurrence (may alter past-paid balances).",
 	}, updateTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_transaction",
