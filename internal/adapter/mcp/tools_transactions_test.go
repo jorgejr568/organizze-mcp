@@ -39,9 +39,9 @@ func (f *fakeTransactionSvc) Update(_ context.Context, id int64, p domain.Update
 	f.updated.id, f.updated.params = id, p
 	return &domain.Transaction{ID: id}, nil
 }
-func (f *fakeTransactionSvc) Delete(_ context.Context, id int64) error {
+func (f *fakeTransactionSvc) Delete(_ context.Context, id int64, _ domain.DeleteTransactionParams) (*domain.Transaction, error) {
 	f.deletedID = id
-	return nil
+	return &domain.Transaction{ID: id}, nil
 }
 
 type nopTransactionSvc struct{}
@@ -58,7 +58,9 @@ func (nopTransactionSvc) Create(context.Context, domain.CreateTransactionParams)
 func (nopTransactionSvc) Update(context.Context, int64, domain.UpdateTransactionParams) (*domain.Transaction, error) {
 	return &domain.Transaction{}, nil
 }
-func (nopTransactionSvc) Delete(context.Context, int64) error { return nil }
+func (nopTransactionSvc) Delete(context.Context, int64, domain.DeleteTransactionParams) (*domain.Transaction, error) {
+	return nil, nil
+}
 
 func TestListTransactionsHandler_PassesAllFilters(t *testing.T) {
 	svc := &fakeTransactionSvc{}

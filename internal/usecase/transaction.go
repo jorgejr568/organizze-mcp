@@ -17,7 +17,7 @@ type TransactionReader interface {
 type TransactionWriter interface {
 	Create(ctx context.Context, params domain.CreateTransactionParams) (*domain.Transaction, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransactionParams) (*domain.Transaction, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64, params domain.DeleteTransactionParams) (*domain.Transaction, error)
 }
 
 // TransactionRepository composes reader and writer for callers that need both.
@@ -55,8 +55,11 @@ func (s *TransactionService) Update(ctx context.Context, id int64, p domain.Upda
 	return s.repo.Update(ctx, id, p)
 }
 
-func (s *TransactionService) Delete(ctx context.Context, id int64) error {
-	return s.repo.Delete(ctx, id)
+func (s *TransactionService) Delete(ctx context.Context, id int64, p domain.DeleteTransactionParams) (*domain.Transaction, error) {
+	if p.UpdateFuture != nil && p.UpdateAll != nil {
+		return nil, fmt.Errorf("%w: update_future and update_all are mutually exclusive", domain.ErrValidation)
+	}
+	return s.repo.Delete(ctx, id, p)
 }
 
 func validateCreate(p domain.CreateTransactionParams) error {

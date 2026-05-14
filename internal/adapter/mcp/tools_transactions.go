@@ -14,7 +14,7 @@ type TransactionService interface {
 	Get(ctx context.Context, id int64) (*domain.Transaction, error)
 	Create(ctx context.Context, params domain.CreateTransactionParams) (*domain.Transaction, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransactionParams) (*domain.Transaction, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64, params domain.DeleteTransactionParams) (*domain.Transaction, error)
 }
 
 // ---------- list / get ----------
@@ -92,12 +92,15 @@ type UpdateTransactionOutput struct {
 // ---------- delete ----------
 
 type DeleteTransactionInput struct {
-	ID int64 `json:"id" jsonschema:"The numeric transaction id to delete."`
+	ID           int64 `json:"id" jsonschema:"The numeric transaction id to delete."`
+	UpdateFuture *bool `json:"update_future,omitempty" jsonschema:"For recurring/installment series: also delete the current and all FUTURE occurrences. Mutually exclusive with update_all."`
+	UpdateAll    *bool `json:"update_all,omitempty"    jsonschema:"For recurring/installment series: delete ALL occurrences, including past ones. May alter the account balance if past entries were paid. Mutually exclusive with update_future."`
 }
 
 type DeleteTransactionOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted     bool                `json:"deleted"`
+	ID          int64               `json:"id"`
+	Transaction *domain.Transaction `json:"transaction,omitempty"`
 }
 
 // ---------- handlers ----------
@@ -167,10 +170,13 @@ func updateTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Upda
 
 func deleteTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[DeleteTransactionInput, DeleteTransactionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteTransactionInput) (*mcpsdk.CallToolResult, DeleteTransactionOutput, error) {
-		if err := svc.Delete(ctx, in.ID); err != nil {
+		tx, err := svc.Delete(ctx, in.ID, domain.DeleteTransactionParams{
+			UpdateFuture: in.UpdateFuture, UpdateAll: in.UpdateAll,
+		})
+		if err != nil {
 			return nil, DeleteTransactionOutput{}, err
 		}
-		return nil, DeleteTransactionOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteTransactionOutput{Deleted: true, ID: in.ID, Transaction: tx}, nil
 	}
 }
 
@@ -193,6 +199,6 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 	}, updateTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_transaction",
-		Description: "Permanently delete an Organizze transaction by id. There is no soft-delete; the row is gone after this call returns successfully. Calling delete on an already-deleted id returns a not-found error rather than re-deleting.",
+		Description: "Permanently delete an Organizze transaction by id. For recurring (fixa) or installment (parcelada) series, set update_future=true to also delete this and all future occurrences, or update_all=true to delete every occurrence (may alter past-paid balances). The two flags are mutually exclusive.",
 	}, deleteTransactionHandler(svc))
 }

@@ -111,6 +111,20 @@ func (p Periodicity) Valid() bool {
 // Note: `Tags []Tag` has different semantics — because it's not a pointer,
 // `omitempty` only drops nil; an explicit `[]Tag{}` will be marshalled and may
 // clear server-side tags. Pass nil to leave tags unchanged.
+// DeleteTransactionParams scopes a DELETE to a single occurrence (default) or
+// the recurring/installment series. UpdateFuture and UpdateAll are mutually
+// exclusive; only one may be set. Zero value means "delete this occurrence
+// only" and produces an empty request body.
+type DeleteTransactionParams struct {
+	UpdateFuture *bool `json:"update_future,omitempty"`
+	UpdateAll    *bool `json:"update_all,omitempty"`
+}
+
+// IsZero reports whether the params would marshal to an empty JSON object.
+func (p DeleteTransactionParams) IsZero() bool {
+	return p.UpdateFuture == nil && p.UpdateAll == nil
+}
+
 type UpdateTransactionParams struct {
 	Description  *string `json:"description,omitempty"`
 	Date         *string `json:"date,omitempty"`

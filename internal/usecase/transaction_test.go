@@ -30,9 +30,9 @@ func (f *fakeTransactionRepo) Update(_ context.Context, id int64, _ domain.Updat
 	f.updatedID = id
 	return &domain.Transaction{ID: id}, nil
 }
-func (f *fakeTransactionRepo) Delete(_ context.Context, id int64) error {
+func (f *fakeTransactionRepo) Delete(_ context.Context, id int64, _ domain.DeleteTransactionParams) (*domain.Transaction, error) {
 	f.deletedID = id
-	return nil
+	return &domain.Transaction{ID: id}, nil
 }
 
 func TestTransactionService_ListAndGet(t *testing.T) {
@@ -167,10 +167,19 @@ func TestTransactionService_UpdateDelete(t *testing.T) {
 	if repo.updatedID != 42 {
 		t.Errorf("repo.updatedID = %d", repo.updatedID)
 	}
-	if err := svc.Delete(context.Background(), 42); err != nil {
+	if _, err := svc.Delete(context.Background(), 42, domain.DeleteTransactionParams{}); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if repo.deletedID != 42 {
 		t.Errorf("repo.deletedID = %d", repo.deletedID)
+	}
+}
+
+func TestTransactionService_Delete_RejectsBothFlags(t *testing.T) {
+	svc := NewTransactionService(&fakeTransactionRepo{})
+	tt := true
+	_, err := svc.Delete(context.Background(), 1, domain.DeleteTransactionParams{UpdateFuture: &tt, UpdateAll: &tt})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("err = %v, want ErrValidation", err)
 	}
 }
