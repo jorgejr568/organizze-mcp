@@ -124,6 +124,40 @@ func TestTransactionService_Create_ValidatesRecurrencePeriodicity(t *testing.T) 
 	})
 }
 
+func TestTransactionService_Create_RejectsBothRecurrenceAndInstallments(t *testing.T) {
+	svc := NewTransactionService(&fakeTransactionRepo{})
+	_, err := svc.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "x", Date: "2026-05-14", AmountCents: 1, AccountID: 1, CategoryID: 1,
+		Recurrence:   &domain.RecurrenceAttributes{Periodicity: domain.PeriodicityMonthly},
+		Installments: &domain.InstallmentsAttributes{Periodicity: domain.PeriodicityMonthly, Total: 12},
+	})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("err = %v, want ErrValidation", err)
+	}
+}
+
+func TestTransactionService_Create_RejectsInstallments_BadPeriodicity(t *testing.T) {
+	svc := NewTransactionService(&fakeTransactionRepo{})
+	_, err := svc.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "x", Date: "2026-05-14", AmountCents: 1, AccountID: 1, CategoryID: 1,
+		Installments: &domain.InstallmentsAttributes{Periodicity: "daily", Total: 12},
+	})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("err = %v, want ErrValidation", err)
+	}
+}
+
+func TestTransactionService_Create_RejectsInstallments_NonPositiveTotal(t *testing.T) {
+	svc := NewTransactionService(&fakeTransactionRepo{})
+	_, err := svc.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "x", Date: "2026-05-14", AmountCents: 1, AccountID: 1, CategoryID: 1,
+		Installments: &domain.InstallmentsAttributes{Periodicity: domain.PeriodicityMonthly, Total: 0},
+	})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("err = %v, want ErrValidation", err)
+	}
+}
+
 func TestTransactionService_UpdateDelete(t *testing.T) {
 	repo := &fakeTransactionRepo{}
 	svc := NewTransactionService(repo)

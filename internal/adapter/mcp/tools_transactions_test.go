@@ -123,6 +123,28 @@ func TestCreateTransactionHandler_PlumbsRecurrence(t *testing.T) {
 	}
 }
 
+func TestCreateTransactionHandler_PlumbsInstallments(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := createTransactionHandler(svc)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, CreateTransactionInput{
+		Description: "Computador", Date: "2026-05-14", AmountCents: -100000,
+		AccountID: 1, CategoryID: 10,
+		Installments: &InstallmentsInput{Periodicity: "monthly", Total: 12},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if svc.created.Installments == nil {
+		t.Fatalf("installments not forwarded: %+v", svc.created)
+	}
+	if svc.created.Installments.Periodicity != domain.PeriodicityMonthly {
+		t.Errorf("periodicity = %q, want monthly", svc.created.Installments.Periodicity)
+	}
+	if svc.created.Installments.Total != 12 {
+		t.Errorf("total = %d, want 12", svc.created.Installments.Total)
+	}
+}
+
 func TestCreateTransactionHandler_PropagatesValidationError(t *testing.T) {
 	svc := &fakeTransactionSvc{createErr: domain.ErrValidation}
 	h := createTransactionHandler(svc)

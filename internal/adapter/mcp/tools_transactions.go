@@ -40,21 +40,28 @@ type GetTransactionOutput struct {
 // ---------- create ----------
 
 type CreateTransactionInput struct {
-	Description string           `json:"description" jsonschema:"Short transaction description."`
-	Date        string           `json:"date"        jsonschema:"YYYY-MM-DD."`
-	AmountCents int64            `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income."`
-	AccountID   int64            `json:"account_id"   jsonschema:"Source account id."`
-	CategoryID  int64            `json:"category_id"  jsonschema:"Category id."`
-	Paid        bool             `json:"paid"         jsonschema:"Whether the transaction is already paid."`
-	Notes       string           `json:"notes,omitempty"      jsonschema:"Optional notes."`
-	ContactID   *int64           `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
-	Tags        []domain.Tag     `json:"tags,omitempty"      jsonschema:"Optional tags."`
-	Recurrence  *RecurrenceInput `json:"recurrence,omitempty" jsonschema:"Optional. Set to create a fixed recurring transaction. Organizze will schedule the entry at the given periodicity and the response will carry recurring=true."`
+	Description  string             `json:"description" jsonschema:"Short transaction description."`
+	Date         string             `json:"date"        jsonschema:"YYYY-MM-DD."`
+	AmountCents  int64              `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income."`
+	AccountID    int64              `json:"account_id"   jsonschema:"Source account id."`
+	CategoryID   int64              `json:"category_id"  jsonschema:"Category id."`
+	Paid         bool               `json:"paid"         jsonschema:"Whether the transaction is already paid."`
+	Notes        string             `json:"notes,omitempty"      jsonschema:"Optional notes."`
+	ContactID    *int64             `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
+	Tags         []domain.Tag       `json:"tags,omitempty"      jsonschema:"Optional tags."`
+	Recurrence   *RecurrenceInput   `json:"recurrence,omitempty"   jsonschema:"Optional. Set to create a fixed recurring transaction (recurrence_attributes). Mutually exclusive with installments."`
+	Installments *InstallmentsInput `json:"installments,omitempty" jsonschema:"Optional. Set to create an installment-plan transaction (installments_attributes). Mutually exclusive with recurrence."`
 }
 
 // RecurrenceInput selects the cadence for a fixed recurring transaction.
 type RecurrenceInput struct {
 	Periodicity string `json:"periodicity" jsonschema:"One of: weekly, biweekly, monthly, bimonthly, trimonthly, yearly."`
+}
+
+// InstallmentsInput selects an installment plan for a parcelada create.
+type InstallmentsInput struct {
+	Periodicity string `json:"periodicity" jsonschema:"One of: weekly, biweekly, monthly, bimonthly, trimonthly, yearly."`
+	Total       int    `json:"total"       jsonschema:"Total number of installments (>=1)."`
 }
 
 type CreateTransactionOutput struct {
@@ -127,6 +134,12 @@ func createTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Crea
 				Periodicity: domain.Periodicity(in.Recurrence.Periodicity),
 			}
 		}
+		if in.Installments != nil {
+			params.Installments = &domain.InstallmentsAttributes{
+				Periodicity: domain.Periodicity(in.Installments.Periodicity),
+				Total:       in.Installments.Total,
+			}
+		}
 		tx, err := svc.Create(ctx, params)
 		if err != nil {
 			return nil, CreateTransactionOutput{}, err
@@ -169,7 +182,7 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 	}, getTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "create_transaction",
-		Description: "Create a new Organizze transaction. amount_cents is negative for expenses, positive for income. Pass an optional `recurrence` object with `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly) to create a fixed recurring transaction.",
+		Description: "Create a new Organizze transaction. amount_cents is negative for expenses, positive for income. For a fixed recurring transaction, pass `recurrence` with a `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly). For a parcelada (installment) transaction, pass `installments` with `periodicity` and `total` (number of installments). `recurrence` and `installments` are mutually exclusive.",
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_transaction",

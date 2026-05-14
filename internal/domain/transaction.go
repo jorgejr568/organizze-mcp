@@ -37,16 +37,17 @@ type Transaction struct {
 // CreateTransactionParams are the inputs to TransactionService.Create.
 // Shape mirrors the Organizze POST body but is owned by the domain layer.
 type CreateTransactionParams struct {
-	Description string                 `json:"description"`
-	Date        string                 `json:"date"`
-	AmountCents int64                  `json:"amount_cents"`
-	AccountID   int64                  `json:"account_id"`
-	CategoryID  int64                  `json:"category_id"`
-	Paid        bool                   `json:"paid"`
-	Notes       string                 `json:"notes,omitempty"`
-	ContactID   *int64                 `json:"contact_id,omitempty"`
-	Tags        []Tag                  `json:"tags,omitempty"`
-	Recurrence  *RecurrenceAttributes  `json:"recurrence_attributes,omitempty"`
+	Description  string                  `json:"description"`
+	Date         string                  `json:"date"`
+	AmountCents  int64                   `json:"amount_cents"`
+	AccountID    int64                   `json:"account_id"`
+	CategoryID   int64                   `json:"category_id"`
+	Paid         bool                    `json:"paid"`
+	Notes        string                  `json:"notes,omitempty"`
+	ContactID    *int64                  `json:"contact_id,omitempty"`
+	Tags         []Tag                   `json:"tags,omitempty"`
+	Recurrence   *RecurrenceAttributes   `json:"recurrence_attributes,omitempty"`
+	Installments *InstallmentsAttributes `json:"installments_attributes,omitempty"`
 }
 
 // RecurrenceAttributes turns POST /transactions into a fixed recurring create.
@@ -54,6 +55,14 @@ type CreateTransactionParams struct {
 // and the response carries `"recurring": true`.
 type RecurrenceAttributes struct {
 	Periodicity Periodicity `json:"periodicity"`
+}
+
+// InstallmentsAttributes turns POST /transactions into an installment (parcelada)
+// create. Total is the number of installments; the response carries
+// total_installments == total.
+type InstallmentsAttributes struct {
+	Periodicity Periodicity `json:"periodicity"`
+	Total       int         `json:"total"`
 }
 
 // Periodicity is the allowed cadence for a fixed recurring transaction.

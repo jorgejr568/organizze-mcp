@@ -72,8 +72,19 @@ func validateCreate(p domain.CreateTransactionParams) error {
 	case p.CategoryID == 0:
 		return fmt.Errorf("%w: category_id is required", domain.ErrValidation)
 	}
+	if p.Recurrence != nil && p.Installments != nil {
+		return fmt.Errorf("%w: recurrence_attributes and installments_attributes are mutually exclusive", domain.ErrValidation)
+	}
 	if p.Recurrence != nil && !p.Recurrence.Periodicity.Valid() {
 		return fmt.Errorf("%w: recurrence.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
+	}
+	if p.Installments != nil {
+		if !p.Installments.Periodicity.Valid() {
+			return fmt.Errorf("%w: installments.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
+		}
+		if p.Installments.Total <= 0 {
+			return fmt.Errorf("%w: installments.total must be > 0", domain.ErrValidation)
+		}
 	}
 	return nil
 }
