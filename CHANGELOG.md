@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-14
+
+### Added
+- **Two new MCP tools** (catalogue grows 28 → 30):
+  - `get_credit_card_invoice_payment` — fetches the consolidated payment `Transaction` for an invoice via `GET /credit_cards/{credit_card_id}/invoices/{invoice_id}/payments`. Was the only documented Organizze endpoint with no MCP counterpart.
+  - `get_transfer` — fetches a single transfer by id via `GET /transfers/{id}`. Brings transfers into symmetry with every other resource that has both `list_*` and `get_*` tools.
+- **Transactions — installment plans (parcelada)**: `create_transaction` accepts an optional `installments` object with `periodicity` and `total`, forwarded to Organizze as `installments_attributes`. Mutually exclusive with `recurrence` (the v0.4.0 fixed-recurring variant); the usecase layer rejects both being set with `domain.ErrValidation`.
+- **Transactions — recurring/installment series propagation**: `update_transaction` and `delete_transaction` both accept optional `update_future` and `update_all` flags. `update_future=true` propagates the operation to the current and all future occurrences; `update_all=true` includes past occurrences too (may alter the account balance if past entries were already paid). On `delete_transaction` the two flags are mutually exclusive and validated.
+- **Invoices — date filters**: `list_credit_card_invoices` accepts optional `start_date` / `end_date` (YYYY-MM-DD). Without a range, Organizze caps results to the current calendar year — clients can now reach historical invoices.
+- **Accounts — archive flag**: `update_account` exposes `archived` (`*bool`). Clients can archive or unarchive accounts through MCP.
+- **Credit cards — expanded update**: `update_credit_card` exposes `limit_cents`, `card_network`, `archived`, and `default`. Previously only `name`, `due_day`, `closing_day`, `description`, and `update_invoices_since` were mutable.
+- **Transfers — fully modeled response**: `domain.Transfer` grew from 11 to 24 fields — `total_installments`, `installment`, `recurring`, `attachments_count`, `credit_card_id`, `credit_card_invoice_id`, `paid_credit_card_id`, `paid_credit_card_invoice_id`, `created_at`, `updated_at`, `tags`, `attachments` (as `[]json.RawMessage`), and the `deleted` discriminator. Opposite ids are now nullable (`*int64`).
+- **Delete-output snapshots**: every mutating delete tool (`delete_account`, `delete_category`, `delete_credit_card`, `delete_transaction`, `delete_transfer`) now returns the deleted resource snapshot in an optional `{Deleted, ID, X *domain.X}` shape. The previous `{Deleted, ID}` contract still holds; the new field is opaque (`omitempty`) when the API echoes nothing (e.g. 204 responses).
+
+### Fixed
+- **`delete_category` replacement was silently ignored.** `replacement_id` was previously sent as a query string parameter (`?replacement_id=18`) — Organizze documents it as a JSON request body and ignored the query form, silently falling back to the default category. Now sent as `{"replacement_id":<id>}` body with `Content-Type: application/json`. Affected transactions are correctly reassigned per `ORGANIZZE_API.md` "Excluir uma categoria".
+
+### Changed
+- `RequestExecutor.Delete` broadened from `(ctx, path) error` to `(ctx, path, body, out any) error` to support DELETE-with-body endpoints and snapshot decoding. The five no-body callsites pass `(nil, nil)` and behave identically on the wire.
+- `usecase/{account,category,credit_card,transaction,transfer}.go`: `Delete` methods on the `*Writer` interfaces and the service structs now return `(*domain.X, error)` to surface the deleted snapshot. Adapter conformance is unchanged for callers that ignore the return value.
+- README tool catalogue extended from 28 to 30 rows; numbering reflows accordingly.
+
 ## [0.4.0] - 2026-05-14
 
 ### Added
