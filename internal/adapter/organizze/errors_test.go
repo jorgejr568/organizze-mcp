@@ -25,6 +25,7 @@ func TestAPIError_MapsToDomainSentinels(t *testing.T) {
 		{http.StatusForbidden, domain.ErrUnauthorized},
 		{http.StatusUnprocessableEntity, domain.ErrValidation},
 		{http.StatusBadRequest, domain.ErrValidation},
+		{http.StatusTooManyRequests, domain.ErrRateLimited},
 		{http.StatusInternalServerError, domain.ErrUpstream},
 	}
 	for _, c := range cases {
@@ -39,5 +40,15 @@ func TestAPIError_UnknownStatusMapsToUpstream(t *testing.T) {
 	err := &APIError{StatusCode: 418}
 	if !errors.Is(err, domain.ErrUpstream) {
 		t.Error("unknown status should map to ErrUpstream")
+	}
+}
+
+func TestAPIError_429MapsToRateLimited(t *testing.T) {
+	err := &APIError{StatusCode: http.StatusTooManyRequests}
+	if !errors.Is(err, domain.ErrRateLimited) {
+		t.Error("429 should map to ErrRateLimited")
+	}
+	if errors.Is(err, domain.ErrUpstream) {
+		t.Error("429 should NOT also map to ErrUpstream (one sentinel per status)")
 	}
 }

@@ -84,25 +84,40 @@ ORGANIZZE_API_KEY=... ORGANIZZE_EMAIL=... ORGANIZZE_USER_AGENT='App (e@x.com)' \
   ./bin/organizze-mcp
 ```
 
-## Tool catalogue
+## Tool catalogue (28 tools)
 
-28 tools. `amount_cents` is **negative for expenses, positive for income**.
+`amount_cents` is **negative for expenses, positive for income**.
 
-| Tool | Service.Method | Mutating? |
-|---|---|---|
-| `get_user` | UserService.Get | no |
-| `list_accounts` / `get_account` | AccountService.{List, Get} | no |
-| `create_account` / `update_account` / `delete_account` | AccountService.{Create, Update, Delete} | **yes** |
-| `list_categories` / `get_category` | CategoryService.{List, Get} | no |
-| `create_category` / `update_category` / `delete_category` | CategoryService.{Create, Update, Delete} | **yes** |
-| `list_budgets` | BudgetService.List (year/month routing) | no |
-| `list_credit_cards` / `get_credit_card` | CreditCardService.{List, Get} | no |
-| `create_credit_card` / `update_credit_card` / `delete_credit_card` | CreditCardService.{Create, Update, Delete} | **yes** |
-| `list_credit_card_invoices` / `get_credit_card_invoice` | InvoiceService.{List, Get} | no |
-| `list_transfers` | TransferService.List | no |
-| `create_transfer` / `update_transfer` / `delete_transfer` | TransferService.{Create, Update, Delete} | **yes** |
-| `list_transactions` / `get_transaction` | TransactionService.{List, Get} | no |
-| `create_transaction` / `update_transaction` / `delete_transaction` | TransactionService.{Create, Update, Delete} | **yes** |
+| #  | Tool                         | Operation                           | Mutating? |
+|----|------------------------------|-------------------------------------|-----------|
+| 1  | `get_user`                   | UserService.Get                     | no        |
+| 2  | `list_accounts`              | AccountService.List                 | no        |
+| 3  | `get_account`                | AccountService.Get                  | no        |
+| 4  | `create_account`             | AccountService.Create               | **yes**   |
+| 5  | `update_account`             | AccountService.Update               | **yes**   |
+| 6  | `delete_account`             | AccountService.Delete               | **yes**   |
+| 7  | `list_categories`            | CategoryService.List                | no        |
+| 8  | `get_category`               | CategoryService.Get                 | no        |
+| 9  | `create_category`            | CategoryService.Create              | **yes**   |
+| 10 | `update_category`            | CategoryService.Update              | **yes**   |
+| 11 | `delete_category`            | CategoryService.Delete              | **yes**   |
+| 12 | `list_budgets`               | BudgetService.List (period routing) | no        |
+| 13 | `list_credit_cards`          | CreditCardService.List              | no        |
+| 14 | `get_credit_card`            | CreditCardService.Get               | no        |
+| 15 | `create_credit_card`         | CreditCardService.Create            | **yes**   |
+| 16 | `update_credit_card`         | CreditCardService.Update            | **yes**   |
+| 17 | `delete_credit_card`         | CreditCardService.Delete            | **yes**   |
+| 18 | `list_credit_card_invoices`  | InvoiceService.List                 | no        |
+| 19 | `get_credit_card_invoice`    | InvoiceService.Get                  | no        |
+| 20 | `list_transfers`             | TransferService.List                | no        |
+| 21 | `create_transfer`            | TransferService.Create              | **yes**   |
+| 22 | `update_transfer`            | TransferService.Update              | **yes**   |
+| 23 | `delete_transfer`            | TransferService.Delete              | **yes**   |
+| 24 | `list_transactions`          | TransactionService.List             | no        |
+| 25 | `get_transaction`            | TransactionService.Get              | no        |
+| 26 | `create_transaction`         | TransactionService.Create           | **yes**   |
+| 27 | `update_transaction`         | TransactionService.Update           | **yes**   |
+| 28 | `delete_transaction`         | TransactionService.Delete           | **yes**   |
 
 ## Development
 
@@ -116,4 +131,4 @@ make docker      # container image
 
 ## License
 
-MIT (or your preferred license).
+MIT — see [`LICENSE`](LICENSE).

@@ -1,0 +1,10 @@
+{
+  "id": 1,
+  "name": "Itau Checking",
+  "description": "Primary",
+  "type": "checking",
+  "default": true,
+  "archived": false,
+  "created_at": "2024-01-15T08:30:00Z",
+  "updated_at": "2026-05-10T14:22:00Z"
+}

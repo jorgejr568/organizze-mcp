@@ -1,0 +1,9 @@
+{
+  "amount_in_cents": 50000,
+  "category_id": 10,
+  "date": "2026-05-01",
+  "activity_type": 1,
+  "total": 12000,
+  "predicted_total": 30000,
+  "percentage": "24"
+}
