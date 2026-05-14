@@ -73,6 +73,12 @@ func (e *RequestExecutor) Delete(ctx context.Context, path string) error {
 	return e.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
+// DeleteInto performs a DELETE and decodes the JSON response into out. Use this
+// when the endpoint echoes the deleted resource (e.g. Organizze's transfers).
+func (e *RequestExecutor) DeleteInto(ctx context.Context, path string, out any) error {
+	return e.do(ctx, http.MethodDelete, path, nil, out)
+}
+
 // do is the single point of contact with the HTTP layer.
 func (e *RequestExecutor) do(ctx context.Context, method, path string, body, out any) error {
 	var reqBody io.Reader

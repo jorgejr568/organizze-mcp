@@ -10,6 +10,7 @@ import (
 
 type fakeTransferRepo struct {
 	listFilter domain.ListTransfersFilter
+	gotID      int64
 	created    domain.CreateTransferParams
 	updatedID  int64
 	deletedID  int64
@@ -19,6 +20,10 @@ func (f *fakeTransferRepo) List(_ context.Context, fl domain.ListTransfersFilter
 	f.listFilter = fl
 	return nil, nil
 }
+func (f *fakeTransferRepo) Get(_ context.Context, id int64) (*domain.Transfer, error) {
+	f.gotID = id
+	return &domain.Transfer{ID: id}, nil
+}
 func (f *fakeTransferRepo) Create(_ context.Context, p domain.CreateTransferParams) (*domain.Transfer, error) {
 	f.created = p
 	return &domain.Transfer{ID: 123, AmountCents: p.AmountCents}, nil
@@ -27,9 +32,9 @@ func (f *fakeTransferRepo) Update(_ context.Context, id int64, _ domain.UpdateTr
 	f.updatedID = id
 	return &domain.Transfer{ID: id}, nil
 }
-func (f *fakeTransferRepo) Delete(_ context.Context, id int64) error {
+func (f *fakeTransferRepo) Delete(_ context.Context, id int64) (*domain.Transfer, error) {
 	f.deletedID = id
-	return nil
+	return &domain.Transfer{ID: id, Deleted: true}, nil
 }
 
 func TestTransferService_PassesFilter(t *testing.T) {
@@ -41,6 +46,18 @@ func TestTransferService_PassesFilter(t *testing.T) {
 	}
 	if repo.listFilter.StartDate != "2026-05-01" {
 		t.Errorf("filter not forwarded: %+v", repo.listFilter)
+	}
+}
+
+func TestTransferService_Get(t *testing.T) {
+	repo := &fakeTransferRepo{}
+	svc := NewTransferService(repo)
+	tr, err := svc.Get(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if tr == nil || tr.ID != 42 || repo.gotID != 42 {
+		t.Errorf("tr=%+v repo.gotID=%d", tr, repo.gotID)
 	}
 }
 
@@ -88,10 +105,14 @@ func TestTransferService_UpdateDelete(t *testing.T) {
 	if repo.updatedID != 123 {
 		t.Errorf("repo.updatedID = %d", repo.updatedID)
 	}
-	if err := svc.Delete(context.Background(), 123); err != nil {
+	tr, err := svc.Delete(context.Background(), 123)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if repo.deletedID != 123 {
 		t.Errorf("repo.deletedID = %d", repo.deletedID)
+	}
+	if tr == nil || tr.ID != 123 || !tr.Deleted {
+		t.Errorf("tr = %+v", tr)
 	}
 }
