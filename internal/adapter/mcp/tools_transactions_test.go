@@ -104,6 +104,25 @@ func TestCreateTransactionHandler(t *testing.T) {
 	}
 }
 
+func TestCreateTransactionHandler_PlumbsRecurrence(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := createTransactionHandler(svc)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, CreateTransactionInput{
+		Description: "Despesa fixa", Date: "2026-05-14", AmountCents: -10000,
+		AccountID: 3, CategoryID: 21,
+		Recurrence: &RecurrenceInput{Periodicity: "monthly"},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if svc.created.Recurrence == nil {
+		t.Fatalf("recurrence not forwarded: %+v", svc.created)
+	}
+	if svc.created.Recurrence.Periodicity != domain.PeriodicityMonthly {
+		t.Errorf("periodicity = %q, want monthly", svc.created.Recurrence.Periodicity)
+	}
+}
+
 func TestCreateTransactionHandler_PropagatesValidationError(t *testing.T) {
 	svc := &fakeTransactionSvc{createErr: domain.ErrValidation}
 	h := createTransactionHandler(svc)

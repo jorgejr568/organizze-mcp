@@ -37,15 +37,55 @@ type Transaction struct {
 // CreateTransactionParams are the inputs to TransactionService.Create.
 // Shape mirrors the Organizze POST body but is owned by the domain layer.
 type CreateTransactionParams struct {
-	Description string `json:"description"`
-	Date        string `json:"date"`
-	AmountCents int64  `json:"amount_cents"`
-	AccountID   int64  `json:"account_id"`
-	CategoryID  int64  `json:"category_id"`
-	Paid        bool   `json:"paid"`
-	Notes       string `json:"notes,omitempty"`
-	ContactID   *int64 `json:"contact_id,omitempty"`
-	Tags        []Tag  `json:"tags,omitempty"`
+	Description string                 `json:"description"`
+	Date        string                 `json:"date"`
+	AmountCents int64                  `json:"amount_cents"`
+	AccountID   int64                  `json:"account_id"`
+	CategoryID  int64                  `json:"category_id"`
+	Paid        bool                   `json:"paid"`
+	Notes       string                 `json:"notes,omitempty"`
+	ContactID   *int64                 `json:"contact_id,omitempty"`
+	Tags        []Tag                  `json:"tags,omitempty"`
+	Recurrence  *RecurrenceAttributes  `json:"recurrence_attributes,omitempty"`
+}
+
+// RecurrenceAttributes turns POST /transactions into a fixed recurring create.
+// When supplied, Organizze schedules the transaction at the given periodicity
+// and the response carries `"recurring": true`.
+type RecurrenceAttributes struct {
+	Periodicity Periodicity `json:"periodicity"`
+}
+
+// Periodicity is the allowed cadence for a fixed recurring transaction.
+type Periodicity string
+
+const (
+	PeriodicityWeekly     Periodicity = "weekly"
+	PeriodicityBiweekly   Periodicity = "biweekly"
+	PeriodicityMonthly    Periodicity = "monthly"
+	PeriodicityBimonthly  Periodicity = "bimonthly"
+	PeriodicityTrimonthly Periodicity = "trimonthly"
+	PeriodicityYearly     Periodicity = "yearly"
+)
+
+// AllPeriodicities lists every value accepted by the Organizze API.
+var AllPeriodicities = []Periodicity{
+	PeriodicityWeekly,
+	PeriodicityBiweekly,
+	PeriodicityMonthly,
+	PeriodicityBimonthly,
+	PeriodicityTrimonthly,
+	PeriodicityYearly,
+}
+
+// Valid reports whether p is one of AllPeriodicities.
+func (p Periodicity) Valid() bool {
+	for _, v := range AllPeriodicities {
+		if p == v {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateTransactionParams describe a partial update; nil pointers are omitted

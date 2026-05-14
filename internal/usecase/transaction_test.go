@@ -89,6 +89,41 @@ func TestTransactionService_Create_Succeeds(t *testing.T) {
 	}
 }
 
+func TestTransactionService_Create_ValidatesRecurrencePeriodicity(t *testing.T) {
+	base := domain.CreateTransactionParams{
+		Description: "Despesa fixa", Date: "2026-05-14", AmountCents: -10000,
+		AccountID: 1, CategoryID: 10,
+	}
+	t.Run("empty periodicity is rejected", func(t *testing.T) {
+		in := base
+		in.Recurrence = &domain.RecurrenceAttributes{}
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Create(context.Background(), in); !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("err=%v, want ErrValidation", err)
+		}
+	})
+	t.Run("unknown periodicity is rejected", func(t *testing.T) {
+		in := base
+		in.Recurrence = &domain.RecurrenceAttributes{Periodicity: "daily"}
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Create(context.Background(), in); !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("err=%v, want ErrValidation", err)
+		}
+	})
+	t.Run("valid periodicity is forwarded", func(t *testing.T) {
+		in := base
+		in.Recurrence = &domain.RecurrenceAttributes{Periodicity: domain.PeriodicityMonthly}
+		repo := &fakeTransactionRepo{}
+		svc := NewTransactionService(repo)
+		if _, err := svc.Create(context.Background(), in); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if repo.created.Recurrence == nil || repo.created.Recurrence.Periodicity != domain.PeriodicityMonthly {
+			t.Errorf("repo received %+v", repo.created)
+		}
+	})
+}
+
 func TestTransactionService_UpdateDelete(t *testing.T) {
 	repo := &fakeTransactionRepo{}
 	svc := NewTransactionService(repo)
