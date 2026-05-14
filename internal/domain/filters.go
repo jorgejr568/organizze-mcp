@@ -14,6 +14,14 @@ type ListTransfersFilter struct {
 	EndDate   string
 }
 
+// ListInvoicesFilter is the filter for InvoiceService.List. Empty fields are
+// omitted. Without a date range, Organizze restricts results to the current
+// calendar year (per ORGANIZZE_API.md "Paginação").
+type ListInvoicesFilter struct {
+	StartDate string // YYYY-MM-DD
+	EndDate   string // YYYY-MM-DD
+}
+
 // BudgetPeriod selects which budget view to return.
 //
 //	BudgetPeriod{}                             -> current month
