@@ -86,19 +86,23 @@ ORGANIZZE_API_KEY=... ORGANIZZE_EMAIL=... ORGANIZZE_USER_AGENT='App (e@x.com)' \
 
 ## Tool catalogue
 
-16 tools. `amount_cents` is **negative for expenses, positive for income**.
+28 tools. `amount_cents` is **negative for expenses, positive for income**.
 
-| Tool | Service.Method |
-|---|---|
-| `get_user` | UserService.Get |
-| `list_accounts` / `get_account` | AccountService.{List, Get} |
-| `list_categories` / `get_category` | CategoryService.{List, Get} |
-| `list_budgets` | BudgetService.List (year/month routing) |
-| `list_credit_cards` / `get_credit_card` | CreditCardService.{List, Get} |
-| `list_credit_card_invoices` / `get_credit_card_invoice` | InvoiceService.{List, Get} |
-| `list_transfers` | TransferService.List |
-| `list_transactions` / `get_transaction` | TransactionService.{List, Get} |
-| `create_transaction` / `update_transaction` / `delete_transaction` | TransactionService.{Create, Update, Delete} |
+| Tool | Service.Method | Mutating? |
+|---|---|---|
+| `get_user` | UserService.Get | no |
+| `list_accounts` / `get_account` | AccountService.{List, Get} | no |
+| `create_account` / `update_account` / `delete_account` | AccountService.{Create, Update, Delete} | **yes** |
+| `list_categories` / `get_category` | CategoryService.{List, Get} | no |
+| `create_category` / `update_category` / `delete_category` | CategoryService.{Create, Update, Delete} | **yes** |
+| `list_budgets` | BudgetService.List (year/month routing) | no |
+| `list_credit_cards` / `get_credit_card` | CreditCardService.{List, Get} | no |
+| `create_credit_card` / `update_credit_card` / `delete_credit_card` | CreditCardService.{Create, Update, Delete} | **yes** |
+| `list_credit_card_invoices` / `get_credit_card_invoice` | InvoiceService.{List, Get} | no |
+| `list_transfers` | TransferService.List | no |
+| `create_transfer` / `update_transfer` / `delete_transfer` | TransferService.{Create, Update, Delete} | **yes** |
+| `list_transactions` / `get_transaction` | TransactionService.{List, Get} | no |
+| `create_transaction` / `update_transaction` / `delete_transaction` | TransactionService.{Create, Update, Delete} | **yes** |
 
 ## Development
 
