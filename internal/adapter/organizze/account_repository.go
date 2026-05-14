@@ -31,3 +31,26 @@ func (r *AccountRepository) Get(ctx context.Context, id int64) (*domain.Account,
 	}
 	return &a, nil
 }
+
+// Create issues a POST and returns the persisted account.
+func (r *AccountRepository) Create(ctx context.Context, params domain.CreateAccountParams) (*domain.Account, error) {
+	var a domain.Account
+	if err := r.exec.Post(ctx, "/accounts", params, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// Update issues a PUT with only the non-nil fields from params.
+func (r *AccountRepository) Update(ctx context.Context, id int64, params domain.UpdateAccountParams) (*domain.Account, error) {
+	var a domain.Account
+	if err := r.exec.Put(ctx, fmt.Sprintf("/accounts/%d", id), params, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// Delete issues a DELETE.
+func (r *AccountRepository) Delete(ctx context.Context, id int64) error {
+	return r.exec.Delete(ctx, fmt.Sprintf("/accounts/%d", id))
+}
