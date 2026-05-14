@@ -10,10 +10,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 
 ARG TARGETARCH
+ARG VERSION=dev
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
-    go build -trimpath -ldflags="-s -w" -o /out/organizze-mcp ./cmd/organizze-mcp
+    go build -trimpath \
+      -ldflags="-s -w -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=${VERSION}'" \
+      -o /out/organizze-mcp ./cmd/organizze-mcp
 
 FROM gcr.io/distroless/static:nonroot
 LABEL org.opencontainers.image.source="https://github.com/jorgejr568/organizze-mcp"

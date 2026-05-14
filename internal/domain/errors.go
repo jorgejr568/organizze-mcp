@@ -9,5 +9,6 @@ var (
 	ErrNotFound     = errors.New("domain: not found")
 	ErrUnauthorized = errors.New("domain: unauthorized")
 	ErrValidation   = errors.New("domain: validation failed")
+	ErrRateLimited  = errors.New("domain: rate limited")
 	ErrUpstream     = errors.New("domain: upstream API error")
 )

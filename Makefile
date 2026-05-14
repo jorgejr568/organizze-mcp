@@ -1,9 +1,11 @@
 .PHONY: build test test-cover lint run-stdio run-http docker docker-run clean
 
 BINARY := organizze-mcp
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -s -w -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=$(VERSION)'
 
 build:
-	go build -o bin/$(BINARY) ./cmd/organizze-mcp
+	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/organizze-mcp
 
 test:
 	go test ./...

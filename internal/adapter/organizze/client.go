@@ -53,10 +53,12 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return c.inner.Do(req)
 }
 
-// Inner exposes the underlying *http.Client for advanced callers that need to
-// configure transports (proxies, TLS) directly. Most code should not use this.
-func (c *Client) Inner() *http.Client {
-	return c.inner
+// Timeout returns the per-request deadline this Client was configured with.
+// Callers that need custom transports (proxies, TLS, retries) should construct
+// their own *http.Client and pass it as the HTTPClient argument to
+// NewRequestExecutor — Client is only the default-settings convenience.
+func (c *Client) Timeout() time.Duration {
+	return c.inner.Timeout
 }
 
 // Compile-time check.

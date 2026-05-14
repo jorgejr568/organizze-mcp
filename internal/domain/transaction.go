@@ -48,7 +48,20 @@ type CreateTransactionParams struct {
 	Tags        []Tag  `json:"tags,omitempty"`
 }
 
-// UpdateTransactionParams describe a partial update; nil pointers are omitted.
+// UpdateTransactionParams describe a partial update; nil pointers are omitted
+// from the wire body via `omitempty`.
+//
+// Semantics rely on a load-bearing assumption about the upstream Organizze API:
+// fields absent from the PUT body are treated as "leave unchanged", NOT as
+// "clear to zero / null". If Organizze ever changes this behaviour, every
+// caller of TransactionService.Update becomes destructive. The contract is
+// tested at the wire level (TestTransactionRepository_Update_SendsOnlySetFields
+// asserts that absent fields are absent from the JSON), but the semantic
+// assumption beyond the wire is not tested by anything we control.
+//
+// Note: `Tags []Tag` has different semantics — because it's not a pointer,
+// `omitempty` only drops nil; an explicit `[]Tag{}` will be marshalled and may
+// clear server-side tags. Pass nil to leave tags unchanged.
 type UpdateTransactionParams struct {
 	Description *string `json:"description,omitempty"`
 	Date        *string `json:"date,omitempty"`

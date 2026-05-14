@@ -8,7 +8,13 @@ import (
 )
 
 // Version is reported via the MCP Implementation block on handshake.
-const Version = "0.1.0"
+//
+// Set at link time via:
+//
+//	go build -ldflags="-X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=<value>'"
+//
+// Defaults to "dev" for unstamped builds (go run, go test, IDE builds).
+var Version = "dev"
 
 // Dependencies bundles every service the MCP server needs. Each field is a
 // small interface defined in the matching tools_*.go file. The composition

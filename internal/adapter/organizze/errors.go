@@ -33,6 +33,8 @@ func (e *APIError) Is(target error) bool {
 		return target == domain.ErrUnauthorized
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
 		return target == domain.ErrValidation
+	case http.StatusTooManyRequests:
+		return target == domain.ErrRateLimited
 	default:
 		return target == domain.ErrUpstream
 	}

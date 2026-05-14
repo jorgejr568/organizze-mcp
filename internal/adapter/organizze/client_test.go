@@ -37,7 +37,14 @@ func TestClient_SatisfiesHTTPClient(t *testing.T) {
 
 func TestNewClient_AppliesDefaultTimeout(t *testing.T) {
 	c := NewClient(ClientOptions{})
-	if c.Inner().Timeout == 0 {
-		t.Error("default timeout should be non-zero")
+	if c.Timeout() != defaultTimeout {
+		t.Errorf("Timeout() = %v, want defaultTimeout (%v)", c.Timeout(), defaultTimeout)
+	}
+}
+
+func TestNewClient_HonorsCustomTimeout(t *testing.T) {
+	c := NewClient(ClientOptions{Timeout: 7 * time.Second})
+	if c.Timeout() != 7*time.Second {
+		t.Errorf("Timeout() = %v, want 7s", c.Timeout())
 	}
 }
