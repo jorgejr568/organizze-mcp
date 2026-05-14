@@ -2,9 +2,12 @@
 
 A Model Context Protocol (MCP) server exposing the [Organizze](https://www.organizze.com.br/) REST API to LLM clients (Claude Desktop, Claude Code, etc.), built in Go with a layered Clean Architecture.
 
+> **Unofficial / community-built.** This project is not affiliated with Organizze. It wraps the [public Organizze API](https://github.com/organizze/api-doc) and ships under MIT — Organizze (or anyone) is welcome to fork, redistribute, or adopt it as the canonical reference MCP. See [§ Adoption & forks](#adoption--forks).
+
 ## Status
 
 [![CI](https://github.com/jorgejr568/organizze-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jorgejr568/organizze-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/jorgejr568/organizze-mcp?sort=semver)](https://github.com/jorgejr568/organizze-mcp/releases)
 [![Docker Hub](https://img.shields.io/docker/v/jorgejr568/organizze-mcp?label=docker&sort=semver)](https://hub.docker.com/r/jorgejr568/organizze-mcp)
 
 ## Architecture
@@ -128,6 +131,18 @@ make lint        # go vet
 make build       # binary at bin/organizze-mcp
 make docker      # container image
 ```
+
+## Adoption & forks
+
+This project is intentionally low-friction to adopt:
+
+- **MIT-licensed**, no CLA, no attribution clause beyond the license header.
+- **Single composition root** ([`cmd/organizze-mcp/main.go`](cmd/organizze-mcp/main.go)) — fork, rebrand, repoint the Docker image, and ship.
+- **No Organizze logos, trademarks, or proprietary assets** in the repo.
+- **No telemetry or analytics**: the server only speaks the Organizze REST API and MCP.
+- **Pinned tooling**: Go ≥ 1.23, stdlib `net/http`, the official `github.com/modelcontextprotocol/go-sdk`.
+
+If you maintain Organizze (or another MCP catalogue) and want to host the official version, please open an issue or just fork — no permission needed beyond the MIT license.
 
 ## License
 
