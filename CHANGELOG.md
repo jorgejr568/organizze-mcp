@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-14
+
 ### Added
 - `create_transaction` now accepts an optional `recurrence` object with `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly), forwarded to the Organizze API as `recurrence_attributes` to create a fixed recurring transaction. Periodicity is validated in the usecase layer (wrapped in `domain.ErrValidation`); omitting `recurrence` leaves the on-the-wire body byte-identical to the prior one-off behaviour.
 
