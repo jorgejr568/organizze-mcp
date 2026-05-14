@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
@@ -66,5 +67,21 @@ func TestBudgetService_RejectsMonthWithoutYear(t *testing.T) {
 	}
 	if repo.called != "" {
 		t.Errorf("repo should not have been called; got %q", repo.called)
+	}
+}
+
+func TestBudgetService_RejectsMonthOutOfRange(t *testing.T) {
+	repo := &fakeBudgetRepo{}
+	svc := NewBudgetService(repo)
+	for _, m := range []int{-1, 0, 13, 99} {
+		t.Run(fmt.Sprintf("month=%d", m), func(t *testing.T) {
+			if m == 0 {
+				return // month==0 with year set is "list for year" — not the bad case
+			}
+			_, err := svc.List(context.Background(), domain.BudgetPeriod{Year: 2026, Month: m})
+			if !errors.Is(err, domain.ErrValidation) {
+				t.Errorf("month=%d: err=%v, want ErrValidation", m, err)
+			}
+		})
 	}
 }

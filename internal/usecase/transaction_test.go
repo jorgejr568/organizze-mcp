@@ -51,18 +51,23 @@ func TestTransactionService_ListAndGet(t *testing.T) {
 
 func TestTransactionService_Create_ValidatesRequiredFields(t *testing.T) {
 	svc := NewTransactionService(&fakeTransactionRepo{})
-	cases := []domain.CreateTransactionParams{
-		{}, // all zero
-		{Description: "x"},
-		{Description: "x", Date: "2026-05-14"},
-		{Description: "x", Date: "2026-05-14", AccountID: 1},
-		{Description: "x", Date: "2026-05-14", AccountID: 1, CategoryID: 2}, // AmountCents == 0
+	cases := []struct {
+		name string
+		in   domain.CreateTransactionParams
+	}{
+		{"description missing", domain.CreateTransactionParams{}},
+		{"date missing", domain.CreateTransactionParams{Description: "x"}},
+		{"amount_cents zero", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14"}},
+		{"account_id zero", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14", AmountCents: -1500}},
+		{"category_id zero", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14", AmountCents: -1500, AccountID: 1}},
 	}
-	for i, p := range cases {
-		_, err := svc.Create(context.Background(), p)
-		if !errors.Is(err, domain.ErrValidation) {
-			t.Errorf("case %d: err=%v, want ErrValidation", i, err)
-		}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := svc.Create(context.Background(), c.in); !errors.Is(err, domain.ErrValidation) {
+				t.Errorf("err=%v, want ErrValidation", err)
+			}
+		})
 	}
 }
 
