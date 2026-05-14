@@ -14,16 +14,15 @@ const Version = "0.1.0"
 // small interface defined in the matching tools_*.go file. The composition
 // root in cmd/organizze-mcp wires usecase.*Service concretes into these slots.
 type Dependencies struct {
-	User     UserService
-	Account  AccountService
-	Category CategoryService
-	Budget   BudgetService
-	// CreditCard, Invoice, Transfer, and Transaction are added by Tasks 9-10
-	// alongside their tools_*.go files. The fields below stay commented until
-	// then so the package compiles in isolation.
-	// CreditCard  CreditCardService
-	// Invoice     InvoiceService
-	// Transfer    TransferService
+	User       UserService
+	Account    AccountService
+	Category   CategoryService
+	Budget     BudgetService
+	CreditCard CreditCardService
+	Invoice    InvoiceService
+	Transfer   TransferService
+	// Transaction is added by Task 10 alongside its tools_*.go file. The field
+	// below stays commented until then so the package compiles in isolation.
 	// Transaction TransactionService
 }
 
@@ -38,9 +37,9 @@ func New(deps Dependencies) *mcpsdk.Server {
 	registerAccountTools(s, deps.Account)
 	registerCategoryTools(s, deps.Category)
 	registerBudgetTools(s, deps.Budget)
-	// registerCreditCardTools(s, deps.CreditCard)
-	// registerInvoiceTools(s, deps.Invoice)
-	// registerTransferTools(s, deps.Transfer)
+	registerCreditCardTools(s, deps.CreditCard)
+	registerInvoiceTools(s, deps.Invoice)
+	registerTransferTools(s, deps.Transfer)
 	// registerTransactionTools(s, deps.Transaction)
 
 	return s
