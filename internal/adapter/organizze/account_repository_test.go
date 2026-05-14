@@ -96,6 +96,27 @@ func TestAccountRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestAccountRepository_Update_SendsArchivedWhenSet(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":1,"name":"Itaú","type":"checking","archived":true}`)
+	})
+	repo := NewAccountRepository(exec)
+	archived := true
+	a, err := repo.Update(context.Background(), 1, domain.UpdateAccountParams{Archived: &archived})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if string(gotBody) != `{"archived":true}` {
+		t.Errorf("body = %q, want {\"archived\":true}", string(gotBody))
+	}
+	if a == nil || !a.Archived {
+		t.Errorf("returned = %+v", a)
+	}
+}
+
 func TestAccountRepository_Delete(t *testing.T) {
 	called := false
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {

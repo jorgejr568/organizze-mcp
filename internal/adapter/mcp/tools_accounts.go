@@ -50,7 +50,8 @@ type UpdateAccountInput struct {
 	Name        *string `json:"name,omitempty"        jsonschema:"New account name."`
 	Description *string `json:"description,omitempty" jsonschema:"New description."`
 	Default     *bool   `json:"default,omitempty"     jsonschema:"New default flag."`
-	Type        *string `json:"type,omitempty"        jsonschema:"New type."`
+	Type        *string `json:"type,omitempty"        jsonschema:"New type (checking|savings|other)."`
+	Archived    *bool   `json:"archived,omitempty"    jsonschema:"Archive (true) or unarchive (false) the account."`
 }
 
 type UpdateAccountOutput struct {
@@ -105,7 +106,7 @@ func createAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[CreateAccoun
 func updateAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[UpdateAccountInput, UpdateAccountOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateAccountInput) (*mcpsdk.CallToolResult, UpdateAccountOutput, error) {
 		a, err := svc.Update(ctx, in.ID, domain.UpdateAccountParams{
-			Name: in.Name, Description: in.Description, Default: in.Default, Type: in.Type,
+			Name: in.Name, Description: in.Description, Default: in.Default, Type: in.Type, Archived: in.Archived,
 		})
 		if err != nil {
 			return nil, UpdateAccountOutput{}, err
@@ -138,7 +139,7 @@ func registerAccountTools(s *mcpsdk.Server, svc AccountService) {
 	}, createAccountHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_account",
-		Description: "Update fields on an existing Organizze account. Only fields you provide are changed.",
+		Description: "Update fields on an existing Organizze account. Only fields you provide are changed. Set archived=true to archive (or false to unarchive).",
 	}, updateAccountHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_account",
