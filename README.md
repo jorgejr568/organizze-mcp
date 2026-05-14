@@ -87,40 +87,42 @@ ORGANIZZE_API_KEY=... ORGANIZZE_EMAIL=... ORGANIZZE_USER_AGENT='App (e@x.com)' \
   ./bin/organizze-mcp
 ```
 
-## Tool catalogue (28 tools)
+## Tool catalogue (30 tools)
 
 `amount_cents` is **negative for expenses, positive for income**.
 
-| #  | Tool                         | Operation                           | Mutating? |
-|----|------------------------------|-------------------------------------|-----------|
-| 1  | `get_user`                   | UserService.Get                     | no        |
-| 2  | `list_accounts`              | AccountService.List                 | no        |
-| 3  | `get_account`                | AccountService.Get                  | no        |
-| 4  | `create_account`             | AccountService.Create               | **yes**   |
-| 5  | `update_account`             | AccountService.Update               | **yes**   |
-| 6  | `delete_account`             | AccountService.Delete               | **yes**   |
-| 7  | `list_categories`            | CategoryService.List                | no        |
-| 8  | `get_category`               | CategoryService.Get                 | no        |
-| 9  | `create_category`            | CategoryService.Create              | **yes**   |
-| 10 | `update_category`            | CategoryService.Update              | **yes**   |
-| 11 | `delete_category`            | CategoryService.Delete              | **yes**   |
-| 12 | `list_budgets`               | BudgetService.List (period routing) | no        |
-| 13 | `list_credit_cards`          | CreditCardService.List              | no        |
-| 14 | `get_credit_card`            | CreditCardService.Get               | no        |
-| 15 | `create_credit_card`         | CreditCardService.Create            | **yes**   |
-| 16 | `update_credit_card`         | CreditCardService.Update            | **yes**   |
-| 17 | `delete_credit_card`         | CreditCardService.Delete            | **yes**   |
-| 18 | `list_credit_card_invoices`  | InvoiceService.List                 | no        |
-| 19 | `get_credit_card_invoice`    | InvoiceService.Get                  | no        |
-| 20 | `list_transfers`             | TransferService.List                | no        |
-| 21 | `create_transfer`            | TransferService.Create              | **yes**   |
-| 22 | `update_transfer`            | TransferService.Update              | **yes**   |
-| 23 | `delete_transfer`            | TransferService.Delete              | **yes**   |
-| 24 | `list_transactions`          | TransactionService.List             | no        |
-| 25 | `get_transaction`            | TransactionService.Get              | no        |
-| 26 | `create_transaction`         | TransactionService.Create           | **yes**   |
-| 27 | `update_transaction`         | TransactionService.Update           | **yes**   |
-| 28 | `delete_transaction`         | TransactionService.Delete           | **yes**   |
+| #  | Tool                                | Operation                           | Mutating? |
+|----|-------------------------------------|-------------------------------------|-----------|
+| 1  | `get_user`                          | UserService.Get                     | no        |
+| 2  | `list_accounts`                     | AccountService.List                 | no        |
+| 3  | `get_account`                       | AccountService.Get                  | no        |
+| 4  | `create_account`                    | AccountService.Create               | **yes**   |
+| 5  | `update_account`                    | AccountService.Update               | **yes**   |
+| 6  | `delete_account`                    | AccountService.Delete               | **yes**   |
+| 7  | `list_categories`                   | CategoryService.List                | no        |
+| 8  | `get_category`                      | CategoryService.Get                 | no        |
+| 9  | `create_category`                   | CategoryService.Create              | **yes**   |
+| 10 | `update_category`                   | CategoryService.Update              | **yes**   |
+| 11 | `delete_category`                   | CategoryService.Delete              | **yes**   |
+| 12 | `list_budgets`                      | BudgetService.List (period routing) | no        |
+| 13 | `list_credit_cards`                 | CreditCardService.List              | no        |
+| 14 | `get_credit_card`                   | CreditCardService.Get               | no        |
+| 15 | `create_credit_card`                | CreditCardService.Create            | **yes**   |
+| 16 | `update_credit_card`                | CreditCardService.Update            | **yes**   |
+| 17 | `delete_credit_card`                | CreditCardService.Delete            | **yes**   |
+| 18 | `list_credit_card_invoices`         | InvoiceService.List                 | no        |
+| 19 | `get_credit_card_invoice`           | InvoiceService.Get                  | no        |
+| 20 | `get_credit_card_invoice_payment`   | InvoiceService.Payment              | no        |
+| 21 | `list_transfers`                    | TransferService.List                | no        |
+| 22 | `get_transfer`                      | TransferService.Get                 | no        |
+| 23 | `create_transfer`                   | TransferService.Create              | **yes**   |
+| 24 | `update_transfer`                   | TransferService.Update              | **yes**   |
+| 25 | `delete_transfer`                   | TransferService.Delete              | **yes**   |
+| 26 | `list_transactions`                 | TransactionService.List             | no        |
+| 27 | `get_transaction`                   | TransactionService.Get              | no        |
+| 28 | `create_transaction`                | TransactionService.Create           | **yes**   |
+| 29 | `update_transaction`                | TransactionService.Update           | **yes**   |
+| 30 | `delete_transaction`                | TransactionService.Delete           | **yes**   |
 
 ## Development
 
