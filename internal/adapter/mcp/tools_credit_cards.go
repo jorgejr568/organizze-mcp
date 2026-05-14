@@ -49,6 +49,10 @@ type UpdateCreditCardInput struct {
 	ClosingDay          *int    `json:"closing_day,omitempty"           jsonschema:"New closing day (1-31)."`
 	Description         *string `json:"description,omitempty"           jsonschema:"New description."`
 	UpdateInvoicesSince *string `json:"update_invoices_since,omitempty" jsonschema:"If set (YYYY-MM-DD), Organizze retroactively regenerates invoices from this date."`
+	LimitCents          *int64  `json:"limit_cents,omitempty"           jsonschema:"New credit limit in cents."`
+	CardNetwork         *string `json:"card_network,omitempty"          jsonschema:"New card network (visa, mastercard, hipercard, etc.)."`
+	Archived            *bool   `json:"archived,omitempty"              jsonschema:"Archive (true) or unarchive (false) the card."`
+	Default             *bool   `json:"default,omitempty"               jsonschema:"Set as default credit card."`
 }
 
 type UpdateCreditCardOutput struct {
@@ -103,6 +107,8 @@ func updateCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[Update
 		cc, err := svc.Update(ctx, in.ID, domain.UpdateCreditCardParams{
 			Name: in.Name, DueDay: in.DueDay, ClosingDay: in.ClosingDay,
 			Description: in.Description, UpdateInvoicesSince: in.UpdateInvoicesSince,
+			LimitCents: in.LimitCents, CardNetwork: in.CardNetwork,
+			Archived: in.Archived, Default: in.Default,
 		})
 		if err != nil {
 			return nil, UpdateCreditCardOutput{}, err

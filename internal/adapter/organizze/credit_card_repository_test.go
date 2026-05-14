@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
@@ -89,6 +90,34 @@ func TestCreditCardRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 	if _, has := raw["due_day"]; has {
 		t.Errorf("absent fields must be omitted; body=%v", raw)
+	}
+}
+
+func TestCreditCardRepository_Update_SendsAllOptionalFields(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":3,"name":"Visa","closing_day":4,"due_day":17,"limit_cents":2000000,"archived":false,"default":true}`)
+	})
+	repo := NewCreditCardRepository(exec)
+	limit := int64(2000000)
+	network := "mastercard"
+	archived := false
+	defaultCard := true
+	if _, err := repo.Update(context.Background(), 3, domain.UpdateCreditCardParams{
+		LimitCents:  &limit,
+		CardNetwork: &network,
+		Archived:    &archived,
+		Default:     &defaultCard,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got := string(gotBody)
+	for _, want := range []string{`"limit_cents":2000000`, `"card_network":"mastercard"`, `"archived":false`, `"default":true`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("body = %q, missing %s", got, want)
+		}
 	}
 }
 
