@@ -37,16 +37,17 @@ type Transaction struct {
 // CreateTransactionParams are the inputs to TransactionService.Create.
 // Shape mirrors the Organizze POST body but is owned by the domain layer.
 type CreateTransactionParams struct {
-	Description string                 `json:"description"`
-	Date        string                 `json:"date"`
-	AmountCents int64                  `json:"amount_cents"`
-	AccountID   int64                  `json:"account_id"`
-	CategoryID  int64                  `json:"category_id"`
-	Paid        bool                   `json:"paid"`
-	Notes       string                 `json:"notes,omitempty"`
-	ContactID   *int64                 `json:"contact_id,omitempty"`
-	Tags        []Tag                  `json:"tags,omitempty"`
-	Recurrence  *RecurrenceAttributes  `json:"recurrence_attributes,omitempty"`
+	Description  string                  `json:"description"`
+	Date         string                  `json:"date"`
+	AmountCents  int64                   `json:"amount_cents"`
+	AccountID    int64                   `json:"account_id"`
+	CategoryID   int64                   `json:"category_id"`
+	Paid         bool                    `json:"paid"`
+	Notes        string                  `json:"notes,omitempty"`
+	ContactID    *int64                  `json:"contact_id,omitempty"`
+	Tags         []Tag                   `json:"tags,omitempty"`
+	Recurrence   *RecurrenceAttributes   `json:"recurrence_attributes,omitempty"`
+	Installments *InstallmentsAttributes `json:"installments_attributes,omitempty"`
 }
 
 // RecurrenceAttributes turns POST /transactions into a fixed recurring create.
@@ -54,6 +55,14 @@ type CreateTransactionParams struct {
 // and the response carries `"recurring": true`.
 type RecurrenceAttributes struct {
 	Periodicity Periodicity `json:"periodicity"`
+}
+
+// InstallmentsAttributes turns POST /transactions into an installment (parcelada)
+// create. Total is the number of installments; the response carries
+// total_installments == total.
+type InstallmentsAttributes struct {
+	Periodicity Periodicity `json:"periodicity"`
+	Total       int         `json:"total"`
 }
 
 // Periodicity is the allowed cadence for a fixed recurring transaction.
@@ -102,14 +111,30 @@ func (p Periodicity) Valid() bool {
 // Note: `Tags []Tag` has different semantics — because it's not a pointer,
 // `omitempty` only drops nil; an explicit `[]Tag{}` will be marshalled and may
 // clear server-side tags. Pass nil to leave tags unchanged.
+// DeleteTransactionParams scopes a DELETE to a single occurrence (default) or
+// the recurring/installment series. UpdateFuture and UpdateAll are mutually
+// exclusive; only one may be set. Zero value means "delete this occurrence
+// only" and produces an empty request body.
+type DeleteTransactionParams struct {
+	UpdateFuture *bool `json:"update_future,omitempty"`
+	UpdateAll    *bool `json:"update_all,omitempty"`
+}
+
+// IsZero reports whether the params would marshal to an empty JSON object.
+func (p DeleteTransactionParams) IsZero() bool {
+	return p.UpdateFuture == nil && p.UpdateAll == nil
+}
+
 type UpdateTransactionParams struct {
-	Description *string `json:"description,omitempty"`
-	Date        *string `json:"date,omitempty"`
-	AmountCents *int64  `json:"amount_cents,omitempty"`
-	AccountID   *int64  `json:"account_id,omitempty"`
-	CategoryID  *int64  `json:"category_id,omitempty"`
-	Paid        *bool   `json:"paid,omitempty"`
-	Notes       *string `json:"notes,omitempty"`
-	ContactID   *int64  `json:"contact_id,omitempty"`
-	Tags        []Tag   `json:"tags,omitempty"`
+	Description  *string `json:"description,omitempty"`
+	Date         *string `json:"date,omitempty"`
+	AmountCents  *int64  `json:"amount_cents,omitempty"`
+	AccountID    *int64  `json:"account_id,omitempty"`
+	CategoryID   *int64  `json:"category_id,omitempty"`
+	Paid         *bool   `json:"paid,omitempty"`
+	Notes        *string `json:"notes,omitempty"`
+	ContactID    *int64  `json:"contact_id,omitempty"`
+	Tags         []Tag   `json:"tags,omitempty"`
+	UpdateFuture *bool   `json:"update_future,omitempty"`
+	UpdateAll    *bool   `json:"update_all,omitempty"`
 }

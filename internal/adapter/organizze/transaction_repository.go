@@ -70,7 +70,21 @@ func (r *TransactionRepository) Update(ctx context.Context, id int64, params dom
 	return &tx, nil
 }
 
-// Delete issues a DELETE.
-func (r *TransactionRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/transactions/%d", id))
+// Delete issues a DELETE. If params is non-zero, its fields ride along as a
+// JSON body so Organizze can apply the deletion to a recurring/installment
+// series per ORGANIZZE_API.md "Excluir movimentação". The deleted transaction
+// snapshot is returned when the API echoes one; otherwise nil.
+func (r *TransactionRepository) Delete(ctx context.Context, id int64, params domain.DeleteTransactionParams) (*domain.Transaction, error) {
+	var body any
+	if !params.IsZero() {
+		body = params
+	}
+	var out domain.Transaction
+	if err := r.exec.Delete(ctx, fmt.Sprintf("/transactions/%d", id), body, &out); err != nil {
+		return nil, err
+	}
+	if out.ID == 0 {
+		return nil, nil
+	}
+	return &out, nil
 }

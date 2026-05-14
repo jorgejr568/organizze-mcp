@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
@@ -92,6 +93,34 @@ func TestCreditCardRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestCreditCardRepository_Update_SendsAllOptionalFields(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":3,"name":"Visa","closing_day":4,"due_day":17,"limit_cents":2000000,"archived":false,"default":true}`)
+	})
+	repo := NewCreditCardRepository(exec)
+	limit := int64(2000000)
+	network := "mastercard"
+	archived := false
+	defaultCard := true
+	if _, err := repo.Update(context.Background(), 3, domain.UpdateCreditCardParams{
+		LimitCents:  &limit,
+		CardNetwork: &network,
+		Archived:    &archived,
+		Default:     &defaultCard,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got := string(gotBody)
+	for _, want := range []string{`"limit_cents":2000000`, `"card_network":"mastercard"`, `"archived":false`, `"default":true`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("body = %q, missing %s", got, want)
+		}
+	}
+}
+
 func TestCreditCardRepository_Delete(t *testing.T) {
 	called := false
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
@@ -102,10 +131,25 @@ func TestCreditCardRepository_Delete(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	repo := NewCreditCardRepository(exec)
-	if err := repo.Delete(context.Background(), 7); err != nil {
+	if _, err := repo.Delete(context.Background(), 7); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if !called {
 		t.Error("handler not invoked")
+	}
+}
+
+func TestCreditCardRepository_Delete_ReturnsDeletedCard(t *testing.T) {
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":3,"name":"Visa Exclusive","closing_day":4,"due_day":17,"limit_cents":1200000,"archived":true}`)
+	})
+	repo := NewCreditCardRepository(exec)
+	cc, err := repo.Delete(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if cc == nil || cc.ID != 3 || !cc.Archived {
+		t.Errorf("returned = %+v", cc)
 	}
 }

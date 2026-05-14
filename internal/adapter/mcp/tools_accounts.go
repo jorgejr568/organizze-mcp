@@ -13,7 +13,7 @@ type AccountService interface {
 	Get(ctx context.Context, id int64) (*domain.Account, error)
 	Create(ctx context.Context, params domain.CreateAccountParams) (*domain.Account, error)
 	Update(ctx context.Context, id int64, params domain.UpdateAccountParams) (*domain.Account, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.Account, error)
 }
 
 // ---------- list / get ----------
@@ -50,7 +50,8 @@ type UpdateAccountInput struct {
 	Name        *string `json:"name,omitempty"        jsonschema:"New account name."`
 	Description *string `json:"description,omitempty" jsonschema:"New description."`
 	Default     *bool   `json:"default,omitempty"     jsonschema:"New default flag."`
-	Type        *string `json:"type,omitempty"        jsonschema:"New type."`
+	Type        *string `json:"type,omitempty"        jsonschema:"New type (checking|savings|other)."`
+	Archived    *bool   `json:"archived,omitempty"    jsonschema:"Archive (true) or unarchive (false) the account."`
 }
 
 type UpdateAccountOutput struct {
@@ -64,8 +65,9 @@ type DeleteAccountInput struct {
 }
 
 type DeleteAccountOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted bool            `json:"deleted"`
+	ID      int64           `json:"id"`
+	Account *domain.Account `json:"account,omitempty"`
 }
 
 // ---------- handlers ----------
@@ -105,7 +107,7 @@ func createAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[CreateAccoun
 func updateAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[UpdateAccountInput, UpdateAccountOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateAccountInput) (*mcpsdk.CallToolResult, UpdateAccountOutput, error) {
 		a, err := svc.Update(ctx, in.ID, domain.UpdateAccountParams{
-			Name: in.Name, Description: in.Description, Default: in.Default, Type: in.Type,
+			Name: in.Name, Description: in.Description, Default: in.Default, Type: in.Type, Archived: in.Archived,
 		})
 		if err != nil {
 			return nil, UpdateAccountOutput{}, err
@@ -116,10 +118,11 @@ func updateAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[UpdateAccoun
 
 func deleteAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[DeleteAccountInput, DeleteAccountOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteAccountInput) (*mcpsdk.CallToolResult, DeleteAccountOutput, error) {
-		if err := svc.Delete(ctx, in.ID); err != nil {
+		a, err := svc.Delete(ctx, in.ID)
+		if err != nil {
 			return nil, DeleteAccountOutput{}, err
 		}
-		return nil, DeleteAccountOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteAccountOutput{Deleted: true, ID: in.ID, Account: a}, nil
 	}
 }
 
@@ -138,7 +141,7 @@ func registerAccountTools(s *mcpsdk.Server, svc AccountService) {
 	}, createAccountHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_account",
-		Description: "Update fields on an existing Organizze account. Only fields you provide are changed.",
+		Description: "Update fields on an existing Organizze account. Only fields you provide are changed. Set archived=true to archive (or false to unarchive).",
 	}, updateAccountHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_account",

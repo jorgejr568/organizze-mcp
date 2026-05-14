@@ -17,7 +17,7 @@ type TransactionReader interface {
 type TransactionWriter interface {
 	Create(ctx context.Context, params domain.CreateTransactionParams) (*domain.Transaction, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransactionParams) (*domain.Transaction, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64, params domain.DeleteTransactionParams) (*domain.Transaction, error)
 }
 
 // TransactionRepository composes reader and writer for callers that need both.
@@ -55,8 +55,11 @@ func (s *TransactionService) Update(ctx context.Context, id int64, p domain.Upda
 	return s.repo.Update(ctx, id, p)
 }
 
-func (s *TransactionService) Delete(ctx context.Context, id int64) error {
-	return s.repo.Delete(ctx, id)
+func (s *TransactionService) Delete(ctx context.Context, id int64, p domain.DeleteTransactionParams) (*domain.Transaction, error) {
+	if p.UpdateFuture != nil && p.UpdateAll != nil {
+		return nil, fmt.Errorf("%w: update_future and update_all are mutually exclusive", domain.ErrValidation)
+	}
+	return s.repo.Delete(ctx, id, p)
 }
 
 func validateCreate(p domain.CreateTransactionParams) error {
@@ -72,8 +75,19 @@ func validateCreate(p domain.CreateTransactionParams) error {
 	case p.CategoryID == 0:
 		return fmt.Errorf("%w: category_id is required", domain.ErrValidation)
 	}
+	if p.Recurrence != nil && p.Installments != nil {
+		return fmt.Errorf("%w: recurrence_attributes and installments_attributes are mutually exclusive", domain.ErrValidation)
+	}
 	if p.Recurrence != nil && !p.Recurrence.Periodicity.Valid() {
 		return fmt.Errorf("%w: recurrence.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
+	}
+	if p.Installments != nil {
+		if !p.Installments.Periodicity.Valid() {
+			return fmt.Errorf("%w: installments.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
+		}
+		if p.Installments.Total <= 0 {
+			return fmt.Errorf("%w: installments.total must be > 0", domain.ErrValidation)
+		}
 	}
 	return nil
 }

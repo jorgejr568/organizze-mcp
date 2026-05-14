@@ -12,6 +12,7 @@ import (
 
 type fakeTransferSvc struct {
 	listFilter domain.ListTransfersFilter
+	gotID      int64
 	created    domain.CreateTransferParams
 	updated    struct {
 		id     int64
@@ -25,6 +26,10 @@ func (f *fakeTransferSvc) List(_ context.Context, fl domain.ListTransfersFilter)
 	f.listFilter = fl
 	return []domain.Transfer{{ID: 1}}, nil
 }
+func (f *fakeTransferSvc) Get(_ context.Context, id int64) (*domain.Transfer, error) {
+	f.gotID = id
+	return &domain.Transfer{ID: id}, nil
+}
 func (f *fakeTransferSvc) Create(_ context.Context, p domain.CreateTransferParams) (*domain.Transfer, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
@@ -36,14 +41,17 @@ func (f *fakeTransferSvc) Update(_ context.Context, id int64, p domain.UpdateTra
 	f.updated.id, f.updated.params = id, p
 	return &domain.Transfer{ID: id}, nil
 }
-func (f *fakeTransferSvc) Delete(_ context.Context, id int64) error {
+func (f *fakeTransferSvc) Delete(_ context.Context, id int64) (*domain.Transfer, error) {
 	f.deletedID = id
-	return nil
+	return &domain.Transfer{ID: id, Deleted: true}, nil
 }
 
 type nopTransferSvc struct{}
 
 func (nopTransferSvc) List(context.Context, domain.ListTransfersFilter) ([]domain.Transfer, error) {
+	return nil, nil
+}
+func (nopTransferSvc) Get(context.Context, int64) (*domain.Transfer, error) {
 	return nil, nil
 }
 func (nopTransferSvc) Create(context.Context, domain.CreateTransferParams) (*domain.Transfer, error) {
@@ -52,7 +60,7 @@ func (nopTransferSvc) Create(context.Context, domain.CreateTransferParams) (*dom
 func (nopTransferSvc) Update(context.Context, int64, domain.UpdateTransferParams) (*domain.Transfer, error) {
 	return nil, nil
 }
-func (nopTransferSvc) Delete(context.Context, int64) error { return nil }
+func (nopTransferSvc) Delete(context.Context, int64) (*domain.Transfer, error) { return nil, nil }
 
 func TestListTransfersHandler_PassesFilter(t *testing.T) {
 	svc := &fakeTransferSvc{}
@@ -65,6 +73,18 @@ func TestListTransfersHandler_PassesFilter(t *testing.T) {
 	}
 	if svc.listFilter.StartDate != "2026-05-01" || svc.listFilter.EndDate != "2026-05-31" {
 		t.Errorf("filter = %+v", svc.listFilter)
+	}
+}
+
+func TestGetTransferHandler(t *testing.T) {
+	svc := &fakeTransferSvc{}
+	h := getTransferHandler(svc)
+	_, out, err := h(context.Background(), &mcpsdk.CallToolRequest{}, GetTransferInput{ID: 42})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if out.Transfer.ID != 42 || svc.gotID != 42 {
+		t.Errorf("out=%+v svc.gotID=%d", out, svc.gotID)
 	}
 }
 
@@ -115,5 +135,8 @@ func TestDeleteTransferHandler(t *testing.T) {
 	}
 	if !out.Deleted || out.ID != 123 || svc.deletedID != 123 {
 		t.Errorf("out=%+v svc.deletedID=%d", out, svc.deletedID)
+	}
+	if out.Transfer == nil || out.Transfer.ID != 123 || !out.Transfer.Deleted {
+		t.Errorf("out.Transfer = %+v", out.Transfer)
 	}
 }

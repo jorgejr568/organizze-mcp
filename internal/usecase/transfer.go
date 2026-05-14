@@ -9,12 +9,13 @@ import (
 
 type TransferReader interface {
 	List(ctx context.Context, filter domain.ListTransfersFilter) ([]domain.Transfer, error)
+	Get(ctx context.Context, id int64) (*domain.Transfer, error)
 }
 
 type TransferWriter interface {
 	Create(ctx context.Context, params domain.CreateTransferParams) (*domain.Transfer, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransferParams) (*domain.Transfer, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.Transfer, error)
 }
 
 type TransferRepository interface {
@@ -32,6 +33,10 @@ func NewTransferService(repo TransferRepository) *TransferService {
 
 func (s *TransferService) List(ctx context.Context, filter domain.ListTransfersFilter) ([]domain.Transfer, error) {
 	return s.repo.List(ctx, filter)
+}
+
+func (s *TransferService) Get(ctx context.Context, id int64) (*domain.Transfer, error) {
+	return s.repo.Get(ctx, id)
 }
 
 func (s *TransferService) Create(ctx context.Context, p domain.CreateTransferParams) (*domain.Transfer, error) {
@@ -52,6 +57,6 @@ func (s *TransferService) Update(ctx context.Context, id int64, p domain.UpdateT
 	return s.repo.Update(ctx, id, p)
 }
 
-func (s *TransferService) Delete(ctx context.Context, id int64) error {
+func (s *TransferService) Delete(ctx context.Context, id int64) (*domain.Transfer, error) {
 	return s.repo.Delete(ctx, id)
 }

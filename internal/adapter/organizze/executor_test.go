@@ -87,8 +87,65 @@ func TestExecutor_DELETE_HandlesNoContent(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
-	if err := exec.Delete(context.Background(), "/x/1"); err != nil {
+	if err := exec.Delete(context.Background(), "/x/1", nil, nil); err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+}
+
+func TestRequestExecutor_Delete_WithBody_SendsJSONBodyAndDecodesResponse(t *testing.T) {
+	var gotMethod, gotPath, gotCT string
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotCT = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":42,"deleted":true}`)
+	})
+
+	body := map[string]any{"replacement_id": 18}
+	var out struct {
+		ID      int64 `json:"id"`
+		Deleted bool  `json:"deleted"`
+	}
+	if err := exec.Delete(context.Background(), "/categories/6", body, &out); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", gotMethod)
+	}
+	if gotPath != "/categories/6" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if gotCT != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotCT)
+	}
+	if string(gotBody) != `{"replacement_id":18}` {
+		t.Errorf("body = %q, want {\"replacement_id\":18}", string(gotBody))
+	}
+	if out.ID != 42 || !out.Deleted {
+		t.Errorf("decoded = %+v", out)
+	}
+}
+
+func TestRequestExecutor_Delete_NilBody_OmitsContentType(t *testing.T) {
+	var gotCT string
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	if err := exec.Delete(context.Background(), "/accounts/1", nil, nil); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if gotCT != "" {
+		t.Errorf("Content-Type = %q on body-less DELETE, want empty", gotCT)
+	}
+	if len(gotBody) != 0 {
+		t.Errorf("body = %q on body-less DELETE, want empty", string(gotBody))
 	}
 }
 

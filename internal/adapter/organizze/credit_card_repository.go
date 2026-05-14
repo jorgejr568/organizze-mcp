@@ -50,7 +50,11 @@ func (r *CreditCardRepository) Update(ctx context.Context, id int64, params doma
 	return &cc, nil
 }
 
-// Delete issues a DELETE.
-func (r *CreditCardRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/credit_cards/%d", id))
+// Delete issues a DELETE and returns the deleted credit card snapshot.
+func (r *CreditCardRepository) Delete(ctx context.Context, id int64) (*domain.CreditCard, error) {
+	var out domain.CreditCard
+	if err := r.exec.Delete(ctx, fmt.Sprintf("/credit_cards/%d", id), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

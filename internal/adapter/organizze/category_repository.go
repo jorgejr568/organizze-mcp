@@ -3,8 +3,6 @@ package organizze
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"strconv"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
 )
@@ -52,14 +50,20 @@ func (r *CategoryRepository) Update(ctx context.Context, id int64, params domain
 	return &c, nil
 }
 
-// Delete issues a DELETE. If replacementID is non-nil, the affected transactions
-// are reassigned to that category (Organizze "replacement_id" query parameter).
-func (r *CategoryRepository) Delete(ctx context.Context, id int64, replacementID *int64) error {
-	path := fmt.Sprintf("/categories/%d", id)
+// Delete issues a DELETE. If replacementID is non-nil, the request body is
+// {"replacement_id": ID} which tells Organizze to reassign affected
+// transactions to that category (per ORGANIZZE_API.md "Excluir uma categoria").
+// Returns the deleted Category as echoed by the API.
+func (r *CategoryRepository) Delete(ctx context.Context, id int64, replacementID *int64) (*domain.Category, error) {
+	var body any
 	if replacementID != nil {
-		q := url.Values{}
-		q.Set("replacement_id", strconv.FormatInt(*replacementID, 10))
-		path += "?" + q.Encode()
+		body = struct {
+			ReplacementID int64 `json:"replacement_id"`
+		}{ReplacementID: *replacementID}
 	}
-	return r.exec.Delete(ctx, path)
+	var out domain.Category
+	if err := r.exec.Delete(ctx, fmt.Sprintf("/categories/%d", id), body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

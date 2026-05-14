@@ -7,21 +7,35 @@ import (
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
 )
 
-type fakeInvoiceRepo struct{}
+type fakeInvoiceRepo struct {
+	gotFilter domain.ListInvoicesFilter
+}
 
-func (f *fakeInvoiceRepo) List(_ context.Context, _ int64) ([]domain.Invoice, error) {
+func (f *fakeInvoiceRepo) List(_ context.Context, _ int64, filter domain.ListInvoicesFilter) ([]domain.Invoice, error) {
+	f.gotFilter = filter
 	return []domain.Invoice{{ID: 1}}, nil
 }
 func (f *fakeInvoiceRepo) Get(_ context.Context, _ int64, _ int64) (*domain.Invoice, error) {
 	return &domain.Invoice{ID: 1}, nil
 }
+func (f *fakeInvoiceRepo) Payment(_ context.Context, _ int64, invoiceID int64) (*domain.Transaction, error) {
+	return &domain.Transaction{ID: 1033, Description: "Pagamento fatura", CategoryID: invoiceID}, nil
+}
 
 func TestInvoiceService(t *testing.T) {
-	svc := NewInvoiceService(&fakeInvoiceRepo{})
-	if xs, _ := svc.List(context.Background(), 9); len(xs) != 1 {
+	repo := &fakeInvoiceRepo{}
+	svc := NewInvoiceService(repo)
+	filter := domain.ListInvoicesFilter{StartDate: "2024-01-01", EndDate: "2024-12-31"}
+	if xs, _ := svc.List(context.Background(), 9, filter); len(xs) != 1 {
 		t.Errorf("List: %v", xs)
+	}
+	if repo.gotFilter != filter {
+		t.Errorf("filter forwarded = %+v, want %+v", repo.gotFilter, filter)
 	}
 	if v, _ := svc.Get(context.Background(), 9, 1); v.ID != 1 {
 		t.Errorf("Get: %+v", v)
+	}
+	if tx, _ := svc.Payment(context.Background(), 9, 100); tx == nil || tx.ID != 1033 {
+		t.Errorf("Payment: %+v", tx)
 	}
 }

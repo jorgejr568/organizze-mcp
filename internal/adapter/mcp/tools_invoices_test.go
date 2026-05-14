@@ -11,33 +11,57 @@ import (
 
 type fakeInvoiceSvc struct {
 	gotCard, gotInvoice int64
+	gotFilter           domain.ListInvoicesFilter
 }
 
-func (f *fakeInvoiceSvc) List(_ context.Context, cardID int64) ([]domain.Invoice, error) {
+func (f *fakeInvoiceSvc) List(_ context.Context, cardID int64, filter domain.ListInvoicesFilter) ([]domain.Invoice, error) {
 	f.gotCard = cardID
+	f.gotFilter = filter
 	return []domain.Invoice{{ID: 100}}, nil
 }
 func (f *fakeInvoiceSvc) Get(_ context.Context, cardID, invID int64) (*domain.Invoice, error) {
 	f.gotCard, f.gotInvoice = cardID, invID
 	return &domain.Invoice{ID: invID}, nil
 }
+func (f *fakeInvoiceSvc) Payment(_ context.Context, cardID, invID int64) (*domain.Transaction, error) {
+	f.gotCard, f.gotInvoice = cardID, invID
+	return &domain.Transaction{ID: 1033, Description: "Pagamento fatura", AccountID: 3, CategoryID: 21}, nil
+}
 
 type nopInvoiceSvc struct{}
 
-func (nopInvoiceSvc) List(context.Context, int64) ([]domain.Invoice, error)      { return nil, nil }
-func (nopInvoiceSvc) Get(context.Context, int64, int64) (*domain.Invoice, error) { return &domain.Invoice{}, nil }
+func (nopInvoiceSvc) List(context.Context, int64, domain.ListInvoicesFilter) ([]domain.Invoice, error) {
+	return nil, nil
+}
+func (nopInvoiceSvc) Get(context.Context, int64, int64) (*domain.Invoice, error) {
+	return &domain.Invoice{}, nil
+}
+func (nopInvoiceSvc) Payment(context.Context, int64, int64) (*domain.Transaction, error) {
+	return &domain.Transaction{}, nil
+}
 
 func TestInvoiceHandlers(t *testing.T) {
 	svc := &fakeInvoiceSvc{}
 	hList := listInvoicesHandler(svc)
-	if _, out, err := hList(context.Background(), &mcpsdk.CallToolRequest{}, ListInvoicesInput{CreditCardID: 9}); err != nil || len(out.Invoices) != 1 {
+	if _, out, err := hList(context.Background(), &mcpsdk.CallToolRequest{}, ListInvoicesInput{CreditCardID: 9, StartDate: "2024-01-01", EndDate: "2024-12-31"}); err != nil || len(out.Invoices) != 1 {
 		t.Fatalf("list: out=%+v err=%v", out, err)
 	}
 	if svc.gotCard != 9 {
 		t.Errorf("svc.gotCard = %d", svc.gotCard)
 	}
+	wantFilter := domain.ListInvoicesFilter{StartDate: "2024-01-01", EndDate: "2024-12-31"}
+	if svc.gotFilter != wantFilter {
+		t.Errorf("svc.gotFilter = %+v, want %+v", svc.gotFilter, wantFilter)
+	}
 	hGet := getInvoiceHandler(svc)
 	if _, out, err := hGet(context.Background(), &mcpsdk.CallToolRequest{}, GetInvoiceInput{CreditCardID: 9, InvoiceID: 100}); err != nil || out.Invoice.ID != 100 {
 		t.Fatalf("get: out=%+v err=%v", out, err)
+	}
+	hPay := getInvoicePaymentHandler(svc)
+	if _, out, err := hPay(context.Background(), &mcpsdk.CallToolRequest{}, GetInvoicePaymentInput{CreditCardID: 3, InvoiceID: 186}); err != nil || out.Payment.ID != 1033 || out.Payment.Description != "Pagamento fatura" {
+		t.Fatalf("payment: out=%+v err=%v", out, err)
+	}
+	if svc.gotCard != 3 || svc.gotInvoice != 186 {
+		t.Errorf("payment forwarded card=%d inv=%d", svc.gotCard, svc.gotInvoice)
 	}
 }

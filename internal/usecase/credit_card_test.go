@@ -32,9 +32,9 @@ func (f *fakeCreditCardRepo) Update(_ context.Context, id int64, _ domain.Update
 	f.updatedID = id
 	return &domain.CreditCard{ID: id}, nil
 }
-func (f *fakeCreditCardRepo) Delete(_ context.Context, id int64) error {
+func (f *fakeCreditCardRepo) Delete(_ context.Context, id int64) (*domain.CreditCard, error) {
 	f.deletedID = id
-	return nil
+	return &domain.CreditCard{ID: id}, nil
 }
 
 func TestCreditCardService(t *testing.T) {
@@ -96,8 +96,10 @@ func TestCreditCardService_UpdateDelete(t *testing.T) {
 	if repo.updatedID != 7 {
 		t.Errorf("repo.updatedID = %d", repo.updatedID)
 	}
-	if err := svc.Delete(context.Background(), 7); err != nil {
+	if cc, err := svc.Delete(context.Background(), 7); err != nil {
 		t.Fatalf("Delete: %v", err)
+	} else if cc == nil || cc.ID != 7 {
+		t.Errorf("Delete returned %+v", cc)
 	}
 	if repo.deletedID != 7 {
 		t.Errorf("repo.deletedID = %d", repo.deletedID)

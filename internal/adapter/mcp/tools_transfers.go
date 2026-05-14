@@ -10,9 +10,10 @@ import (
 
 type TransferService interface {
 	List(ctx context.Context, filter domain.ListTransfersFilter) ([]domain.Transfer, error)
+	Get(ctx context.Context, id int64) (*domain.Transfer, error)
 	Create(ctx context.Context, params domain.CreateTransferParams) (*domain.Transfer, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransferParams) (*domain.Transfer, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.Transfer, error)
 }
 
 type ListTransfersInput struct {
@@ -22,6 +23,14 @@ type ListTransfersInput struct {
 
 type ListTransfersOutput struct {
 	Transfers []domain.Transfer `json:"transfers"`
+}
+
+type GetTransferInput struct {
+	ID int64 `json:"id" jsonschema:"The numeric Organizze transfer id."`
+}
+
+type GetTransferOutput struct {
+	Transfer domain.Transfer `json:"transfer"`
 }
 
 type CreateTransferInput struct {
@@ -53,8 +62,9 @@ type DeleteTransferInput struct {
 }
 
 type DeleteTransferOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted  bool             `json:"deleted"`
+	ID       int64            `json:"id"`
+	Transfer *domain.Transfer `json:"transfer,omitempty"`
 }
 
 func listTransfersHandler(svc TransferService) mcpsdk.ToolHandlerFor[ListTransfersInput, ListTransfersOutput] {
@@ -64,6 +74,16 @@ func listTransfersHandler(svc TransferService) mcpsdk.ToolHandlerFor[ListTransfe
 			return nil, ListTransfersOutput{}, err
 		}
 		return nil, ListTransfersOutput{Transfers: ts}, nil
+	}
+}
+
+func getTransferHandler(svc TransferService) mcpsdk.ToolHandlerFor[GetTransferInput, GetTransferOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetTransferInput) (*mcpsdk.CallToolResult, GetTransferOutput, error) {
+		tr, err := svc.Get(ctx, in.ID)
+		if err != nil {
+			return nil, GetTransferOutput{}, err
+		}
+		return nil, GetTransferOutput{Transfer: *tr}, nil
 	}
 }
 
@@ -94,10 +114,11 @@ func updateTransferHandler(svc TransferService) mcpsdk.ToolHandlerFor[UpdateTran
 
 func deleteTransferHandler(svc TransferService) mcpsdk.ToolHandlerFor[DeleteTransferInput, DeleteTransferOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteTransferInput) (*mcpsdk.CallToolResult, DeleteTransferOutput, error) {
-		if err := svc.Delete(ctx, in.ID); err != nil {
+		tr, err := svc.Delete(ctx, in.ID)
+		if err != nil {
 			return nil, DeleteTransferOutput{}, err
 		}
-		return nil, DeleteTransferOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteTransferOutput{Deleted: true, ID: in.ID, Transfer: tr}, nil
 	}
 }
 
@@ -106,6 +127,10 @@ func registerTransferTools(s *mcpsdk.Server, svc TransferService) {
 		Name:        "list_transfers",
 		Description: "List Organizze transfers, optionally filtered by date range.",
 	}, listTransfersHandler(svc))
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_transfer",
+		Description: "Fetch a single Organizze transfer by id.",
+	}, getTransferHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "create_transfer",
 		Description: "Create a new Organizze transfer between two bank accounts. Required: credit_account_id (receiving), debit_account_id (sending), amount_cents, date. Credit cards are NOT accepted as source or destination.",

@@ -17,7 +17,7 @@ type AccountReader interface {
 type AccountWriter interface {
 	Create(ctx context.Context, params domain.CreateAccountParams) (*domain.Account, error)
 	Update(ctx context.Context, id int64, params domain.UpdateAccountParams) (*domain.Account, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.Account, error)
 }
 
 // AccountRepository composes reader and writer for callers that need both.
@@ -57,6 +57,6 @@ func (s *AccountService) Update(ctx context.Context, id int64, p domain.UpdateAc
 	return s.repo.Update(ctx, id, p)
 }
 
-func (s *AccountService) Delete(ctx context.Context, id int64) error {
+func (s *AccountService) Delete(ctx context.Context, id int64) (*domain.Account, error) {
 	return s.repo.Delete(ctx, id)
 }

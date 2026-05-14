@@ -13,7 +13,7 @@ type CreditCardService interface {
 	Get(ctx context.Context, id int64) (*domain.CreditCard, error)
 	Create(ctx context.Context, params domain.CreateCreditCardParams) (*domain.CreditCard, error)
 	Update(ctx context.Context, id int64, params domain.UpdateCreditCardParams) (*domain.CreditCard, error)
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64) (*domain.CreditCard, error)
 }
 
 type ListCreditCardsOutput struct {
@@ -49,6 +49,10 @@ type UpdateCreditCardInput struct {
 	ClosingDay          *int    `json:"closing_day,omitempty"           jsonschema:"New closing day (1-31)."`
 	Description         *string `json:"description,omitempty"           jsonschema:"New description."`
 	UpdateInvoicesSince *string `json:"update_invoices_since,omitempty" jsonschema:"If set (YYYY-MM-DD), Organizze retroactively regenerates invoices from this date."`
+	LimitCents          *int64  `json:"limit_cents,omitempty"           jsonschema:"New credit limit in cents."`
+	CardNetwork         *string `json:"card_network,omitempty"          jsonschema:"New card network (visa, mastercard, hipercard, etc.)."`
+	Archived            *bool   `json:"archived,omitempty"              jsonschema:"Archive (true) or unarchive (false) the card."`
+	Default             *bool   `json:"default,omitempty"               jsonschema:"Set as default credit card."`
 }
 
 type UpdateCreditCardOutput struct {
@@ -60,8 +64,9 @@ type DeleteCreditCardInput struct {
 }
 
 type DeleteCreditCardOutput struct {
-	Deleted bool  `json:"deleted"`
-	ID      int64 `json:"id"`
+	Deleted    bool               `json:"deleted"`
+	ID         int64              `json:"id"`
+	CreditCard *domain.CreditCard `json:"credit_card,omitempty"`
 }
 
 func listCreditCardsHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[struct{}, ListCreditCardsOutput] {
@@ -103,6 +108,8 @@ func updateCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[Update
 		cc, err := svc.Update(ctx, in.ID, domain.UpdateCreditCardParams{
 			Name: in.Name, DueDay: in.DueDay, ClosingDay: in.ClosingDay,
 			Description: in.Description, UpdateInvoicesSince: in.UpdateInvoicesSince,
+			LimitCents: in.LimitCents, CardNetwork: in.CardNetwork,
+			Archived: in.Archived, Default: in.Default,
 		})
 		if err != nil {
 			return nil, UpdateCreditCardOutput{}, err
@@ -113,10 +120,11 @@ func updateCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[Update
 
 func deleteCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[DeleteCreditCardInput, DeleteCreditCardOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCreditCardInput) (*mcpsdk.CallToolResult, DeleteCreditCardOutput, error) {
-		if err := svc.Delete(ctx, in.ID); err != nil {
+		cc, err := svc.Delete(ctx, in.ID)
+		if err != nil {
 			return nil, DeleteCreditCardOutput{}, err
 		}
-		return nil, DeleteCreditCardOutput{Deleted: true, ID: in.ID}, nil
+		return nil, DeleteCreditCardOutput{Deleted: true, ID: in.ID, CreditCard: cc}, nil
 	}
 }
 

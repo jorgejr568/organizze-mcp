@@ -39,4 +39,8 @@ type UpdateCreditCardParams struct {
 	ClosingDay          *int    `json:"closing_day,omitempty"`
 	Description         *string `json:"description,omitempty"`
 	UpdateInvoicesSince *string `json:"update_invoices_since,omitempty"`
+	LimitCents          *int64  `json:"limit_cents,omitempty"`
+	CardNetwork         *string `json:"card_network,omitempty"`
+	Archived            *bool   `json:"archived,omitempty"`
+	Default             *bool   `json:"default,omitempty"`
 }
