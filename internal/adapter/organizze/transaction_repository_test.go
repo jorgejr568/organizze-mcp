@@ -147,6 +147,23 @@ func TestTransactionRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestTransactionRepository_Update_SendsUpdateFuture(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":101,"description":"x","amount_cents":1,"account_id":1,"category_id":1,"date":"2026-05-14"}`)
+	})
+	repo := NewTransactionRepository(exec)
+	uf := true
+	if _, err := repo.Update(context.Background(), 101, domain.UpdateTransactionParams{UpdateFuture: &uf}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if string(gotBody) != `{"update_future":true}` {
+		t.Errorf("body = %q", string(gotBody))
+	}
+}
+
 func TestTransactionRepository_Delete(t *testing.T) {
 	called := false
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
@@ -157,10 +174,41 @@ func TestTransactionRepository_Delete(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	repo := NewTransactionRepository(exec)
-	if err := repo.Delete(context.Background(), 777); err != nil {
+	if _, err := repo.Delete(context.Background(), 777, domain.DeleteTransactionParams{}); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if !called {
 		t.Error("handler not invoked")
+	}
+}
+
+func TestTransactionRepository_Delete_SendsBodyWhenFlagsSet(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	repo := NewTransactionRepository(exec)
+	uf := true
+	if _, err := repo.Delete(context.Background(), 101, domain.DeleteTransactionParams{UpdateFuture: &uf}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if string(gotBody) != `{"update_future":true}` {
+		t.Errorf("body = %q", string(gotBody))
+	}
+}
+
+func TestTransactionRepository_Delete_NoFlags_SendsNoBody(t *testing.T) {
+	var gotBody []byte
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	repo := NewTransactionRepository(exec)
+	if _, err := repo.Delete(context.Background(), 101, domain.DeleteTransactionParams{}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(gotBody) != 0 {
+		t.Errorf("body = %q on empty params, want empty", string(gotBody))
 	}
 }
