@@ -59,6 +59,43 @@ func fakeOrganizze(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, `{"id":55,"description":"Pizza-updated","amount_cents":-4500,"account_id":1,"category_id":10,"date":"2026-05-10"}`)
 		case r.Method == http.MethodDelete && r.URL.Path == "/transactions/55":
 			w.WriteHeader(http.StatusNoContent)
+
+		// accounts write
+		case r.Method == http.MethodPost && r.URL.Path == "/accounts":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":18,"name":"Itaú CC","type":"checking","default":true}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/accounts/1":
+			_, _ = io.WriteString(w, `{"id":1,"name":"Checking-renamed","type":"checking"}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/accounts/1":
+			w.WriteHeader(http.StatusNoContent)
+
+		// categories write
+		case r.Method == http.MethodPost && r.URL.Path == "/categories":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":42,"name":"Groceries"}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/categories/10":
+			_, _ = io.WriteString(w, `{"id":10,"name":"Food-updated"}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/categories/10":
+			w.WriteHeader(http.StatusNoContent)
+
+		// credit cards write
+		case r.Method == http.MethodPost && r.URL.Path == "/credit_cards":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":7,"name":"Nubank","closing_day":20,"due_day":27,"limit_cents":500000}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/credit_cards/1":
+			_, _ = io.WriteString(w, `{"id":1,"name":"Nubank-renamed","closing_day":20,"due_day":27,"limit_cents":500000}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/credit_cards/1":
+			w.WriteHeader(http.StatusNoContent)
+
+		// transfers write
+		case r.Method == http.MethodPost && r.URL.Path == "/transfers":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":123,"description":"Transferência","amount_cents":50000,"account_id":2,"oposite_account_id":1,"date":"2026-05-14"}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/transfers/123":
+			_, _ = io.WriteString(w, `{"id":123,"description":"Reimbursement","amount_cents":50000,"account_id":2,"oposite_account_id":1,"date":"2026-05-14"}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/transfers/123":
+			w.WriteHeader(http.StatusNoContent)
+
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			http.NotFound(w, r)
@@ -119,11 +156,15 @@ func newConnectedSession(t *testing.T) *mcpsdk.ClientSession {
 var allExpectedTools = []string{
 	"get_user",
 	"list_accounts", "get_account",
+	"create_account", "update_account", "delete_account",
 	"list_categories", "get_category",
+	"create_category", "update_category", "delete_category",
 	"list_budgets",
 	"list_credit_cards", "get_credit_card",
+	"create_credit_card", "update_credit_card", "delete_credit_card",
 	"list_credit_card_invoices", "get_credit_card_invoice",
 	"list_transfers",
+	"create_transfer", "update_transfer", "delete_transfer",
 	"list_transactions", "get_transaction",
 	"create_transaction", "update_transaction", "delete_transaction",
 }
@@ -199,6 +240,37 @@ func TestIntegration_EveryToolRoundtripsThroughProtocol(t *testing.T) {
 			"description": "Pizza-updated",
 		}},
 		{"delete_transaction", "delete_transaction", map[string]any{"id": 55}},
+
+		{"create_account", "create_account", map[string]any{
+			"name": "Itaú CC", "type": "checking",
+		}},
+		{"update_account", "update_account", map[string]any{
+			"id": 1, "name": "Checking-renamed",
+		}},
+		{"delete_account", "delete_account", map[string]any{"id": 1}},
+
+		{"create_category", "create_category", map[string]any{"name": "Groceries"}},
+		{"update_category", "update_category", map[string]any{
+			"id": 10, "name": "Food-updated",
+		}},
+		{"delete_category", "delete_category", map[string]any{"id": 10}},
+
+		{"create_credit_card", "create_credit_card", map[string]any{
+			"name": "Nubank", "due_day": 27, "closing_day": 20,
+		}},
+		{"update_credit_card", "update_credit_card", map[string]any{
+			"id": 1, "name": "Nubank-renamed",
+		}},
+		{"delete_credit_card", "delete_credit_card", map[string]any{"id": 1}},
+
+		{"create_transfer", "create_transfer", map[string]any{
+			"credit_account_id": 2, "debit_account_id": 1,
+			"amount_cents": 50000, "date": "2026-05-14", "paid": true,
+		}},
+		{"update_transfer", "update_transfer", map[string]any{
+			"id": 123, "description": "Reimbursement",
+		}},
+		{"delete_transfer", "delete_transfer", map[string]any{"id": 123}},
 	}
 	for _, tc := range cases {
 		tc := tc
