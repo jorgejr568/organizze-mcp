@@ -84,7 +84,7 @@ func TestJSONShape_DomainTypesDecodeRealisticFixtures(t *testing.T) {
 		var tr domain.Transfer
 		mustDecodeFixture(t, "transfer.json", &tr)
 		if tr.ID == 0 || tr.Description == "" || tr.AmountCents == 0 ||
-			tr.AccountID == 0 || tr.OppositeAccountID == 0 || tr.CategoryID == 0 {
+			tr.AccountID == 0 || tr.OppositeAccountID == nil || *tr.OppositeAccountID == 0 || tr.CategoryID == 0 {
 			t.Errorf("Transfer decode lost fields: %+v", tr)
 		}
 	})

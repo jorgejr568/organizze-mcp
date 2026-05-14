@@ -94,20 +94,40 @@ func TestTransferRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 }
 
-func TestTransferRepository_Delete(t *testing.T) {
-	called := false
+func TestTransferRepository_Get_HitsTransferURL(t *testing.T) {
+	var gotPath string
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		if r.Method != http.MethodDelete || r.URL.Path != "/transfers/123" {
-			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
-		}
-		w.WriteHeader(http.StatusNoContent)
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":10,"description":"Transferência","amount_cents":-10000,"account_id":3,"date":"2015-09-01"}`)
 	})
 	repo := NewTransferRepository(exec)
-	if err := repo.Delete(context.Background(), 123); err != nil {
+	tr, err := repo.Get(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if gotPath != "/transfers/10" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if tr == nil || tr.ID != 10 {
+		t.Errorf("returned = %+v", tr)
+	}
+}
+
+func TestTransferRepository_Delete_ReturnsDeletedTransferWithDeletedTrue(t *testing.T) {
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/transfers/10" {
+			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":10,"description":"Transferência","amount_cents":-10000,"account_id":3,"date":"2015-09-01","deleted":true}`)
+	})
+	repo := NewTransferRepository(exec)
+	tr, err := repo.Delete(context.Background(), 10)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if !called {
-		t.Error("handler not invoked")
+	if tr == nil || tr.ID != 10 || !tr.Deleted {
+		t.Errorf("returned = %+v", tr)
 	}
 }

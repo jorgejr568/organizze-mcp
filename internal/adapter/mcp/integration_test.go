@@ -50,6 +50,8 @@ func fakeOrganizze(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, `{"id":1033,"description":"Pagamento fatura","amount_cents":0,"account_id":1,"category_id":10,"date":"2026-05-14"}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/transfers":
 			_, _ = io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/transfers/123":
+			_, _ = io.WriteString(w, `{"id":123,"description":"Transferência","amount_cents":-50000,"account_id":2,"oposite_account_id":1,"date":"2026-05-14"}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/transactions":
 			_, _ = io.WriteString(w, `[]`)
 		case r.Method == http.MethodGet && r.URL.Path == "/transactions/55":
@@ -165,7 +167,7 @@ var allExpectedTools = []string{
 	"list_credit_cards", "get_credit_card",
 	"create_credit_card", "update_credit_card", "delete_credit_card",
 	"list_credit_card_invoices", "get_credit_card_invoice", "get_credit_card_invoice_payment",
-	"list_transfers",
+	"list_transfers", "get_transfer",
 	"create_transfer", "update_transfer", "delete_transfer",
 	"list_transactions", "get_transaction",
 	"create_transaction", "update_transaction", "delete_transaction",
@@ -228,6 +230,7 @@ func TestIntegration_EveryToolRoundtripsThroughProtocol(t *testing.T) {
 		{"get_credit_card_invoice", "get_credit_card_invoice", map[string]any{"credit_card_id": 1, "invoice_id": 100}},
 		{"get_credit_card_invoice_payment", "get_credit_card_invoice_payment", map[string]any{"credit_card_id": 1, "invoice_id": 100}},
 		{"list_transfers", "list_transfers", map[string]any{}},
+		{"get_transfer", "get_transfer", map[string]any{"id": 123}},
 		{"list_transactions", "list_transactions", map[string]any{}},
 		{"get_transaction", "get_transaction", map[string]any{"id": 55}},
 		{"create_transaction", "create_transaction", map[string]any{

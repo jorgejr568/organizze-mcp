@@ -37,6 +37,15 @@ func (r *TransferRepository) List(ctx context.Context, f domain.ListTransfersFil
 	return out, nil
 }
 
+// Get returns a single transfer by id.
+func (r *TransferRepository) Get(ctx context.Context, id int64) (*domain.Transfer, error) {
+	var tr domain.Transfer
+	if err := r.exec.Get(ctx, fmt.Sprintf("/transfers/%d", id), &tr); err != nil {
+		return nil, err
+	}
+	return &tr, nil
+}
+
 // Create issues a POST and returns the persisted transfer.
 func (r *TransferRepository) Create(ctx context.Context, params domain.CreateTransferParams) (*domain.Transfer, error) {
 	var tr domain.Transfer
@@ -55,7 +64,15 @@ func (r *TransferRepository) Update(ctx context.Context, id int64, params domain
 	return &tr, nil
 }
 
-// Delete issues a DELETE.
-func (r *TransferRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/transfers/%d", id), nil, nil)
+// Delete issues a DELETE and returns the deleted transfer snapshot (with
+// Deleted=true) as echoed by Organizze.
+func (r *TransferRepository) Delete(ctx context.Context, id int64) (*domain.Transfer, error) {
+	var out domain.Transfer
+	if err := r.exec.Delete(ctx, fmt.Sprintf("/transfers/%d", id), nil, &out); err != nil {
+		return nil, err
+	}
+	if out.ID == 0 {
+		return nil, nil
+	}
+	return &out, nil
 }
