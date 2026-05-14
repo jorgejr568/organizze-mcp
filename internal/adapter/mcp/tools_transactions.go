@@ -161,10 +161,10 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_transaction",
-		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed.",
+		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged (not cleared). To clear notes, pass an empty string; to replace tags, pass the full new tag list (omitting tags leaves them alone, but passing an empty array clears them).",
 	}, updateTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_transaction",
-		Description: "Permanently delete an Organizze transaction by id.",
+		Description: "Permanently delete an Organizze transaction by id. There is no soft-delete; the row is gone after this call returns successfully. Calling delete on an already-deleted id returns a not-found error rather than re-deleting.",
 	}, deleteTransactionHandler(svc))
 }
