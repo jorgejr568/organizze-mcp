@@ -31,3 +31,26 @@ func (r *CreditCardRepository) Get(ctx context.Context, id int64) (*domain.Credi
 	}
 	return &c, nil
 }
+
+// Create issues a POST and returns the persisted credit card.
+func (r *CreditCardRepository) Create(ctx context.Context, params domain.CreateCreditCardParams) (*domain.CreditCard, error) {
+	var cc domain.CreditCard
+	if err := r.exec.Post(ctx, "/credit_cards", params, &cc); err != nil {
+		return nil, err
+	}
+	return &cc, nil
+}
+
+// Update issues a PUT with only the non-nil fields from params.
+func (r *CreditCardRepository) Update(ctx context.Context, id int64, params domain.UpdateCreditCardParams) (*domain.CreditCard, error) {
+	var cc domain.CreditCard
+	if err := r.exec.Put(ctx, fmt.Sprintf("/credit_cards/%d", id), params, &cc); err != nil {
+		return nil, err
+	}
+	return &cc, nil
+}
+
+// Delete issues a DELETE.
+func (r *CreditCardRepository) Delete(ctx context.Context, id int64) error {
+	return r.exec.Delete(ctx, fmt.Sprintf("/credit_cards/%d", id))
+}
