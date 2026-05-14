@@ -68,9 +68,11 @@ func (e *RequestExecutor) Put(ctx context.Context, path string, body, out any) e
 	return e.do(ctx, http.MethodPut, path, body, out)
 }
 
-// Delete performs a DELETE; discards any response body.
-func (e *RequestExecutor) Delete(ctx context.Context, path string) error {
-	return e.do(ctx, http.MethodDelete, path, nil, nil)
+// Delete performs a DELETE. If body is non-nil it is JSON-encoded; if out is
+// non-nil the response body is decoded into it. Pass (nil, nil) for the
+// classic no-body / discard-response case.
+func (e *RequestExecutor) Delete(ctx context.Context, path string, body, out any) error {
+	return e.do(ctx, http.MethodDelete, path, body, out)
 }
 
 // do is the single point of contact with the HTTP layer.

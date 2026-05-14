@@ -52,5 +52,5 @@ func (r *CreditCardRepository) Update(ctx context.Context, id int64, params doma
 
 // Delete issues a DELETE.
 func (r *CreditCardRepository) Delete(ctx context.Context, id int64) error {
-	return r.exec.Delete(ctx, fmt.Sprintf("/credit_cards/%d", id))
+	return r.exec.Delete(ctx, fmt.Sprintf("/credit_cards/%d", id), nil, nil)
 }
