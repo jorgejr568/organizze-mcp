@@ -42,9 +42,9 @@ func (f *fakeCategorySvc) Update(_ context.Context, id int64, p domain.UpdateCat
 	f.updated.id, f.updated.params = id, p
 	return &domain.Category{ID: id}, nil
 }
-func (f *fakeCategorySvc) Delete(_ context.Context, id int64, replacementID *int64) error {
+func (f *fakeCategorySvc) Delete(_ context.Context, id int64, replacementID *int64) (*domain.Category, error) {
 	f.deletedID, f.deletedRepID = id, replacementID
-	return nil
+	return &domain.Category{ID: id, Name: "Marketing"}, nil
 }
 
 type nopCategorySvc struct{}
@@ -59,7 +59,9 @@ func (nopCategorySvc) Create(context.Context, domain.CreateCategoryParams) (*dom
 func (nopCategorySvc) Update(context.Context, int64, domain.UpdateCategoryParams) (*domain.Category, error) {
 	return &domain.Category{}, nil
 }
-func (nopCategorySvc) Delete(context.Context, int64, *int64) error { return nil }
+func (nopCategorySvc) Delete(context.Context, int64, *int64) (*domain.Category, error) {
+	return nil, nil
+}
 
 func TestCategoryHandlers(t *testing.T) {
 	svc := &fakeCategorySvc{}
@@ -118,6 +120,9 @@ func TestDeleteCategoryHandler_NoReplacement(t *testing.T) {
 	}
 	if !out.Deleted || out.ID != 42 || svc.deletedID != 42 || svc.deletedRepID != nil {
 		t.Errorf("out=%+v svc.deletedID=%d svc.deletedRepID=%v", out, svc.deletedID, svc.deletedRepID)
+	}
+	if out.Category == nil || out.Category.ID != 42 {
+		t.Errorf("out.Category = %+v, want category with ID 42", out.Category)
 	}
 }
 

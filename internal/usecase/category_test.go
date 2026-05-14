@@ -33,9 +33,9 @@ func (f *fakeCategoryRepo) Update(_ context.Context, id int64, _ domain.UpdateCa
 	f.updatedID = id
 	return &domain.Category{ID: id}, nil
 }
-func (f *fakeCategoryRepo) Delete(_ context.Context, id int64, replacementID *int64) error {
+func (f *fakeCategoryRepo) Delete(_ context.Context, id int64, replacementID *int64) (*domain.Category, error) {
 	f.deletedID, f.deletedRepID = id, replacementID
-	return nil
+	return &domain.Category{ID: id, Name: "Marketing"}, nil
 }
 
 func TestCategoryService_DelegatesBothCalls(t *testing.T) {
@@ -81,7 +81,7 @@ func TestCategoryService_UpdateDelete(t *testing.T) {
 		t.Errorf("repo.updatedID = %d", repo.updatedID)
 	}
 	rep := int64(99)
-	if err := svc.Delete(context.Background(), 42, &rep); err != nil {
+	if _, err := svc.Delete(context.Background(), 42, &rep); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if repo.deletedID != 42 || repo.deletedRepID == nil || *repo.deletedRepID != 99 {
@@ -92,10 +92,22 @@ func TestCategoryService_UpdateDelete(t *testing.T) {
 func TestCategoryService_Delete_NoReplacement(t *testing.T) {
 	repo := &fakeCategoryRepo{}
 	svc := NewCategoryService(repo)
-	if err := svc.Delete(context.Background(), 42, nil); err != nil {
+	if _, err := svc.Delete(context.Background(), 42, nil); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if repo.deletedRepID != nil {
 		t.Errorf("repo.deletedRepID = %v, want nil", repo.deletedRepID)
+	}
+}
+
+func TestCategoryService_Delete_ReturnsDeletedCategory(t *testing.T) {
+	repo := &fakeCategoryRepo{}
+	svc := NewCategoryService(repo)
+	c, err := svc.Delete(context.Background(), 6, nil)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if c == nil || c.ID != 6 {
+		t.Errorf("returned = %+v", c)
 	}
 }

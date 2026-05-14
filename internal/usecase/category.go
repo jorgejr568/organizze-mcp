@@ -15,7 +15,7 @@ type CategoryReader interface {
 type CategoryWriter interface {
 	Create(ctx context.Context, params domain.CreateCategoryParams) (*domain.Category, error)
 	Update(ctx context.Context, id int64, params domain.UpdateCategoryParams) (*domain.Category, error)
-	Delete(ctx context.Context, id int64, replacementID *int64) error
+	Delete(ctx context.Context, id int64, replacementID *int64) (*domain.Category, error)
 }
 
 type CategoryRepository interface {
@@ -50,6 +50,6 @@ func (s *CategoryService) Update(ctx context.Context, id int64, p domain.UpdateC
 	return s.repo.Update(ctx, id, p)
 }
 
-func (s *CategoryService) Delete(ctx context.Context, id int64, replacementID *int64) error {
+func (s *CategoryService) Delete(ctx context.Context, id int64, replacementID *int64) (*domain.Category, error) {
 	return s.repo.Delete(ctx, id, replacementID)
 }

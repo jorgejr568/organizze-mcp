@@ -90,35 +90,47 @@ func TestCategoryRepository_Update_SendsOnlySetFields(t *testing.T) {
 	}
 }
 
-func TestCategoryRepository_Delete_NoReplacement(t *testing.T) {
+func TestCategoryRepository_Delete_SendsReplacementIDInBody(t *testing.T) {
+	var gotPath, gotCT string
+	var gotBody []byte
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete || r.URL.Path != "/categories/42" {
-			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
-		}
-		if r.URL.RawQuery != "" {
-			t.Errorf("expected no query, got %q", r.URL.RawQuery)
-		}
-		w.WriteHeader(http.StatusNoContent)
+		gotPath = r.URL.Path + "?" + r.URL.RawQuery
+		gotCT = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":6,"name":"Marketing","color":"8dd47f","parent_id":null}`)
 	})
 	repo := NewCategoryRepository(exec)
-	if err := repo.Delete(context.Background(), 42, nil); err != nil {
+	rid := int64(18)
+	cat, err := repo.Delete(context.Background(), 6, &rid)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+	if gotPath != "/categories/6?" {
+		t.Errorf("path = %q, want /categories/6 with no query", gotPath)
+	}
+	if gotCT != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotCT)
+	}
+	if string(gotBody) != `{"replacement_id":18}` {
+		t.Errorf("body = %q, want {\"replacement_id\":18}", string(gotBody))
+	}
+	if cat == nil || cat.ID != 6 {
+		t.Errorf("returned category = %+v", cat)
 	}
 }
 
-func TestCategoryRepository_Delete_WithReplacement(t *testing.T) {
+func TestCategoryRepository_Delete_NilReplacement_SendsNoBody(t *testing.T) {
+	var gotBody []byte
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete || r.URL.Path != "/categories/42" {
-			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
-		}
-		if got := r.URL.Query().Get("replacement_id"); got != "99" {
-			t.Errorf("replacement_id = %q", got)
-		}
+		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	repo := NewCategoryRepository(exec)
-	rep := int64(99)
-	if err := repo.Delete(context.Background(), 42, &rep); err != nil {
+	if _, err := repo.Delete(context.Background(), 6, nil); err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+	if len(gotBody) != 0 {
+		t.Errorf("body = %q on nil replacement, want empty", string(gotBody))
 	}
 }

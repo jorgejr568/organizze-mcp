@@ -87,7 +87,7 @@ func TestExecutor_DELETE_HandlesNoContent(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
-	if err := exec.Delete(context.Background(), "/x/1"); err != nil {
+	if err := exec.Delete(context.Background(), "/x/1", nil, nil); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 }
