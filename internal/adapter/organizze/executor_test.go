@@ -232,3 +232,59 @@ func TestExecutor_LoggingDisabled_WritesNothing(t *testing.T) {
 		t.Errorf("LogWriter received %d bytes with LogRequests=false: %q", buf.Len(), buf.String())
 	}
 }
+
+func TestExecutor_LoggingEnabled_CapturesMethodPathBody_RedactsAuth(t *testing.T) {
+	var buf bytes.Buffer
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":99}`)
+	}))
+	t.Cleanup(ts.Close)
+
+	exec, err := NewRequestExecutor(RequestExecutorOptions{
+		HTTPClient:  NewClient(ClientOptions{}),
+		BaseURL:     ts.URL,
+		Email:       "test@example.com",
+		APIKey:      "super-secret-key",
+		UserAgent:   "Test (test@example.com)",
+		LogRequests: true,
+		LogWriter:   &buf,
+	})
+	if err != nil {
+		t.Fatalf("NewRequestExecutor: %v", err)
+	}
+
+	body := map[string]any{"description": "Coffee", "amount_cents": -1500}
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	if err := exec.Post(context.Background(), "/transactions", body, &out); err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+
+	logged := buf.String()
+	if logged == "" {
+		t.Fatal("LogWriter received nothing with LogRequests=true")
+	}
+
+	// Request-line assertions: method, path, body fields all present.
+	for _, want := range []string{"POST", "/transactions", `"description":"Coffee"`, `"amount_cents":-1500`} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log missing %q; full output:\n%s", want, logged)
+		}
+	}
+
+	// Response-line assertions: status and response body fragment.
+	for _, want := range []string{"201", `"id":99`} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log missing %q; full output:\n%s", want, logged)
+		}
+	}
+
+	// Redaction assertions: Authorization header value and API key MUST NOT appear.
+	for _, banned := range []string{"Basic ", "super-secret-key", "Authorization"} {
+		if strings.Contains(logged, banned) {
+			t.Errorf("log leaked %q; full output:\n%s", banned, logged)
+		}
+	}
+}
