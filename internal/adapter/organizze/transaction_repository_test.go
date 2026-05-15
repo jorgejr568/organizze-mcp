@@ -1,11 +1,14 @@
 package organizze
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
@@ -347,6 +350,72 @@ func TestTransactionRepository_Update_OmitsAccountIDAndCreditCardInvoiceIDWhenNi
 	for _, k := range []string{"account_id", "credit_card_invoice_id"} {
 		if _, has := raw[k]; has {
 			t.Errorf("%s must be omitted when nil; body=%v", k, raw)
+		}
+	}
+}
+
+func TestTransactionRepository_Create_LoggingEnabled_EmitsBodyLine(t *testing.T) {
+	var buf bytes.Buffer
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":1234,"description":"MCP test","amount_cents":-1}`)
+	}))
+	t.Cleanup(ts.Close)
+
+	exec, err := NewRequestExecutor(RequestExecutorOptions{
+		HTTPClient:  NewClient(ClientOptions{}),
+		BaseURL:     ts.URL,
+		Email:       "test@example.com",
+		APIKey:      "test-key",
+		UserAgent:   "Test (test@example.com)",
+		LogRequests: true,
+		LogWriter:   &buf,
+	})
+	if err != nil {
+		t.Fatalf("NewRequestExecutor: %v", err)
+	}
+	repo := NewTransactionRepository(exec)
+
+	params := domain.CreateTransactionParams{
+		Description: "MCP test - auto-delete",
+		AmountCents: -1,
+		Date:        "2026-05-15",
+		CategoryID:  42,
+		AccountID:   7,
+	}
+	tx, err := repo.Create(context.Background(), params)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if tx.ID != 1234 {
+		t.Errorf("tx.ID = %d, want 1234", tx.ID)
+	}
+
+	logged := buf.String()
+	// Request-side: outbound body contains every populated field.
+	for _, want := range []string{
+		"POST",
+		"/transactions",
+		`"description":"MCP test - auto-delete"`,
+		`"amount_cents":-1`,
+		`"date":"2026-05-15"`,
+		`"category_id":42`,
+		`"account_id":7`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("request log missing %q; full output:\n%s", want, logged)
+		}
+	}
+	// Response-side: status and id appear.
+	for _, want := range []string{"201", `"id":1234`} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("response log missing %q; full output:\n%s", want, logged)
+		}
+	}
+	// Redaction guard still holds at the repository layer.
+	for _, banned := range []string{"Basic ", "Authorization", "test-key"} {
+		if strings.Contains(logged, banned) {
+			t.Errorf("log leaked %q; full output:\n%s", banned, logged)
 		}
 	}
 }
