@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-15
+
 ### Fixed
 - **`create_transaction` credit-card billing was silently broken.** Organizze drops `credit_card_id` when `account_id` is also present in the request body, so transactions intended for a credit card were landing on the user's default bank account with no visible error. Three changes together close the trap:
   - `domain.CreateTransactionParams.AccountID` now JSON-marshals with `omitempty`; passing `AccountID: 0` no longer leaks `"account_id":0` onto the wire.
