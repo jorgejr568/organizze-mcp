@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `create_transaction` and `update_transaction` now accept `credit_card_id`; `create_transaction` additionally accepts `credit_card_invoice_id`. Closes the gap with `openapi.yaml`'s `TransactionInput` / `UpdateTransaction` schemas — clients can create or move transactions on a specific credit card / invoice.
+- `Transaction` response now includes `attachments []string`, mirroring `openapi.yaml`'s `Transaction.attachments`.
+
+### Changed
+- `create_transaction` tool description explicitly documents the Organizze installment-amount rule: when `installments` is set, `amount_cents` is the TOTAL across all installments — Organizze divides evenly. To get per-installment value X with N installments, send `amount_cents = X * N`. (Caused a real user surprise: sending R$165.80 with `total=2` yielded two R$82.90 installments.) The `amount_cents` field's jsonschema description on `CreateTransactionInput` carries the same note.
+
 ## [0.5.0] - 2026-05-14
 
 ### Added

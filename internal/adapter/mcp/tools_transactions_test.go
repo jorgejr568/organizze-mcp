@@ -147,6 +147,43 @@ func TestCreateTransactionHandler_PlumbsInstallments(t *testing.T) {
 	}
 }
 
+func TestCreateTransactionHandler_PlumbsCreditCardFields(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := createTransactionHandler(svc)
+	cardID := int64(1287765)
+	invoiceID := int64(276)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, CreateTransactionInput{
+		Description: "Coffee", Date: "2026-05-14", AmountCents: -1500,
+		AccountID: 1, CategoryID: 10,
+		CreditCardID:        &cardID,
+		CreditCardInvoiceID: &invoiceID,
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if svc.created.CreditCardID == nil || *svc.created.CreditCardID != 1287765 {
+		t.Errorf("CreditCardID = %v, want 1287765", svc.created.CreditCardID)
+	}
+	if svc.created.CreditCardInvoiceID == nil || *svc.created.CreditCardInvoiceID != 276 {
+		t.Errorf("CreditCardInvoiceID = %v, want 276", svc.created.CreditCardInvoiceID)
+	}
+}
+
+func TestUpdateTransactionHandler_PlumbsCreditCardID(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := updateTransactionHandler(svc)
+	cardID := int64(1287765)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, UpdateTransactionInput{
+		ID: 777, CreditCardID: &cardID,
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if svc.updated.params.CreditCardID == nil || *svc.updated.params.CreditCardID != 1287765 {
+		t.Errorf("params.CreditCardID = %v", svc.updated.params.CreditCardID)
+	}
+}
+
 func TestCreateTransactionHandler_PropagatesValidationError(t *testing.T) {
 	svc := &fakeTransactionSvc{createErr: domain.ErrValidation}
 	h := createTransactionHandler(svc)

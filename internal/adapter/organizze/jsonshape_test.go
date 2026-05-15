@@ -78,6 +78,9 @@ func TestJSONShape_DomainTypesDecodeRealisticFixtures(t *testing.T) {
 		if len(tx.Tags) == 0 {
 			t.Errorf("Transaction decode dropped Tags: %+v", tx)
 		}
+		if len(tx.Attachments) != 1 || tx.Attachments[0] != "https://example.com/receipt.pdf" {
+			t.Errorf("Transaction decode dropped Attachments: %+v", tx.Attachments)
+		}
 	})
 
 	t.Run("Transfer", func(t *testing.T) {

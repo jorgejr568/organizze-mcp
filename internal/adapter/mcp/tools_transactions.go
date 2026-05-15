@@ -40,17 +40,19 @@ type GetTransactionOutput struct {
 // ---------- create ----------
 
 type CreateTransactionInput struct {
-	Description  string             `json:"description" jsonschema:"Short transaction description."`
-	Date         string             `json:"date"        jsonschema:"YYYY-MM-DD."`
-	AmountCents  int64              `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income."`
-	AccountID    int64              `json:"account_id"   jsonschema:"Source account id."`
-	CategoryID   int64              `json:"category_id"  jsonschema:"Category id."`
-	Paid         bool               `json:"paid"         jsonschema:"Whether the transaction is already paid."`
-	Notes        string             `json:"notes,omitempty"      jsonschema:"Optional notes."`
-	ContactID    *int64             `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
-	Tags         []domain.Tag       `json:"tags,omitempty"      jsonschema:"Optional tags."`
-	Recurrence   *RecurrenceInput   `json:"recurrence,omitempty"   jsonschema:"Optional. Set to create a fixed recurring transaction (recurrence_attributes). Mutually exclusive with installments."`
-	Installments *InstallmentsInput `json:"installments,omitempty" jsonschema:"Optional. Set to create an installment-plan transaction (installments_attributes). Mutually exclusive with recurrence."`
+	Description         string             `json:"description" jsonschema:"Short transaction description."`
+	Date                string             `json:"date"        jsonschema:"YYYY-MM-DD."`
+	AmountCents         int64              `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income. When installments is set, this is the TOTAL across all installments — Organizze divides evenly. To get a per-installment value X with N installments, send amount_cents = X * N."`
+	AccountID           int64              `json:"account_id"   jsonschema:"Source account id."`
+	CategoryID          int64              `json:"category_id"  jsonschema:"Category id."`
+	Paid                bool               `json:"paid"         jsonschema:"Whether the transaction is already paid."`
+	Notes               string             `json:"notes,omitempty"      jsonschema:"Optional notes."`
+	ContactID           *int64             `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
+	Tags                []domain.Tag       `json:"tags,omitempty"       jsonschema:"Optional tags."`
+	CreditCardID        *int64             `json:"credit_card_id,omitempty"         jsonschema:"Optional. Bill this transaction to a credit card by ID. Often paired with credit_card_invoice_id to target a specific invoice."`
+	CreditCardInvoiceID *int64             `json:"credit_card_invoice_id,omitempty" jsonschema:"Optional. Pin this transaction to a specific credit-card invoice. Only meaningful together with credit_card_id."`
+	Recurrence          *RecurrenceInput   `json:"recurrence,omitempty"   jsonschema:"Optional. Set to create a fixed recurring transaction (recurrence_attributes). Mutually exclusive with installments."`
+	Installments        *InstallmentsInput `json:"installments,omitempty" jsonschema:"Optional. Set to create an installment-plan transaction (installments_attributes). Mutually exclusive with recurrence."`
 }
 
 // RecurrenceInput selects the cadence for a fixed recurring transaction.
@@ -81,6 +83,7 @@ type UpdateTransactionInput struct {
 	Notes        *string      `json:"notes,omitempty"        jsonschema:"New notes."`
 	ContactID    *int64       `json:"contact_id,omitempty"   jsonschema:"New contact id."`
 	Tags         []domain.Tag `json:"tags,omitempty"         jsonschema:"Replacement tag list."`
+	CreditCardID *int64       `json:"credit_card_id,omitempty" jsonschema:"New credit-card id; omit to leave unchanged. Pass an explicit value to move the transaction to a different card."`
 	UpdateFuture *bool        `json:"update_future,omitempty" jsonschema:"For recurring/installment series: also apply this update to the current and all FUTURE occurrences."`
 	UpdateAll    *bool        `json:"update_all,omitempty"    jsonschema:"For recurring/installment series: also apply this update to ALL occurrences, including past ones. May alter the account balance if past entries were already paid."`
 }
@@ -133,6 +136,8 @@ func createTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Crea
 			Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
 			AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
 			Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
+			CreditCardID:        in.CreditCardID,
+			CreditCardInvoiceID: in.CreditCardInvoiceID,
 		}
 		if in.Recurrence != nil {
 			params.Recurrence = &domain.RecurrenceAttributes{
@@ -159,6 +164,7 @@ func updateTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Upda
 			Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
 			AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
 			Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
+			CreditCardID: in.CreditCardID,
 			UpdateFuture: in.UpdateFuture, UpdateAll: in.UpdateAll,
 		})
 		if err != nil {
@@ -190,8 +196,12 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 		Description: "Fetch a single Organizze transaction by id.",
 	}, getTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "create_transaction",
-		Description: "Create a new Organizze transaction. amount_cents is negative for expenses, positive for income. For a fixed recurring transaction, pass `recurrence` with a `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly). For a parcelada (installment) transaction, pass `installments` with `periodicity` and `total` (number of installments). `recurrence` and `installments` are mutually exclusive.",
+		Name: "create_transaction",
+		Description: "Create a new Organizze transaction. amount_cents is in cents (negative for expenses, positive for income). " +
+			"For a fixed recurring transaction, pass `recurrence` with a `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly). " +
+			"For a parcelada (installment) transaction, pass `installments` with `periodicity` and `total`; IMPORTANT: when `installments` is set, Organizze treats `amount_cents` as the TOTAL across all installments and divides evenly, so each generated installment will be amount_cents/total. To get per-installment value X with N installments, send amount_cents = X * N. " +
+			"`recurrence` and `installments` are mutually exclusive. " +
+			"Bill to a credit card by setting `credit_card_id` (optionally pinned to an invoice via `credit_card_invoice_id`).",
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_transaction",
