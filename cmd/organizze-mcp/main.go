@@ -53,11 +53,13 @@ func buildServer(cfg *config.Config) (*mcpsdk.Server, error) {
 	httpClient := organizze.NewClient(organizze.ClientOptions{Timeout: cfg.HTTPTimeout})
 
 	exec, err := organizze.NewRequestExecutor(organizze.RequestExecutorOptions{
-		HTTPClient: httpClient,
-		BaseURL:    cfg.BaseURL,
-		Email:      cfg.Email,
-		APIKey:     cfg.APIKey,
-		UserAgent:  cfg.UserAgent,
+		HTTPClient:  httpClient,
+		BaseURL:     cfg.BaseURL,
+		Email:       cfg.Email,
+		APIKey:      cfg.APIKey,
+		UserAgent:   cfg.UserAgent,
+		LogRequests: cfg.LogRequests,
+		// LogWriter intentionally left zero - executor defaults to os.Stderr.
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build request executor: %w", err)
