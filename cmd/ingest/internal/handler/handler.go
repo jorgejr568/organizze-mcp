@@ -8,9 +8,11 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
@@ -66,7 +68,18 @@ func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLReques
 		return jsonResponse(400, `{"error":"invalid json"}`), nil
 	}
 
-	return jsonResponse(500, `{"error":"not implemented"}`), nil
+	out, err := h.SQS.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    aws.String(h.QueueURL),
+		MessageBody: aws.String(string(body)),
+	})
+	if err != nil {
+		logger.Printf(prefix+"sqs send failed: %v", err)
+		return jsonResponse(500, `{"error":"internal error"}`), nil
+	}
+
+	msgID := aws.ToString(out.MessageId)
+	logger.Printf(prefix+"queued message %s (%d bytes)", msgID, len(body))
+	return jsonResponse(202, fmt.Sprintf(`{"queued":true,"message_id":%q}`, msgID)), nil
 }
 
 func jsonResponse(status int, body string) events.LambdaFunctionURLResponse {

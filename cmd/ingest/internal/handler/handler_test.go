@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
@@ -110,6 +112,60 @@ func TestHandle_InvalidJSON_Returns400(t *testing.T) {
 		t.Fatalf("status: got %d want 400", resp.StatusCode)
 	}
 }
+
+func TestHandle_HappyPath_Returns202_AndForwardsBody(t *testing.T) {
+	fake := &fakeSQS{
+		out: &sqs.SendMessageOutput{MessageId: ptr("msg-abc")},
+	}
+	h := newHandler(t, fake)
+	body := `{"stat":"page_view","count":3}`
+	resp, err := h.Handle(context.Background(), req("POST", body, map[string]string{
+		"x-ingest-token": "super-secret",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != 202 {
+		t.Fatalf("status: got %d want 202", resp.StatusCode)
+	}
+	if !strings.Contains(resp.Body, `"queued":true`) {
+		t.Fatalf("body missing queued:true: %q", resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"message_id":"msg-abc"`) {
+		t.Fatalf("body missing message_id: %q", resp.Body)
+	}
+
+	if fake.in == nil {
+		t.Fatalf("SendMessage was not called")
+	}
+	if got := aws.ToString(fake.in.QueueUrl); got != "https://sqs.us-east-1.amazonaws.com/000/test" {
+		t.Fatalf("queue url: got %q", got)
+	}
+	if got := aws.ToString(fake.in.MessageBody); got != body {
+		t.Fatalf("message body: got %q want %q", got, body)
+	}
+}
+
+func TestHandle_SQSError_Returns500_AndDoesNotLeakError(t *testing.T) {
+	fake := &fakeSQS{
+		err: errors.New("aws: ThrottlingException: rate exceeded for queue arn:aws:...:secret-queue"),
+	}
+	h := newHandler(t, fake)
+	resp, err := h.Handle(context.Background(), req("POST", `{"ok":true}`, map[string]string{
+		"x-ingest-token": "super-secret",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != 500 {
+		t.Fatalf("status: got %d want 500", resp.StatusCode)
+	}
+	if strings.Contains(resp.Body, "ThrottlingException") || strings.Contains(resp.Body, "secret-queue") {
+		t.Fatalf("response body leaked aws error: %q", resp.Body)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
 
 // Sentinel test to confirm the fake satisfies the interface.
 var _ SendMessageAPI = (*fakeSQS)(nil)
