@@ -41,6 +41,11 @@ func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLReques
 		return jsonResponse(401, `{"error":"unauthorized"}`), nil
 	}
 
+	if req.RequestContext.HTTP.Method != "POST" {
+		logger.Printf(prefix+"method %s rejected", req.RequestContext.HTTP.Method)
+		return jsonResponse(405, `{"error":"method not allowed"}`), nil
+	}
+
 	return jsonResponse(500, `{"error":"not implemented"}`), nil
 }
 

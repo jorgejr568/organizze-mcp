@@ -72,5 +72,18 @@ func TestHandle_WrongToken_Returns401(t *testing.T) {
 	}
 }
 
+func TestHandle_NonPostMethod_Returns405(t *testing.T) {
+	h := newHandler(t, &fakeSQS{})
+	resp, err := h.Handle(context.Background(), req("GET", "", map[string]string{
+		"x-ingest-token": "super-secret",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != 405 {
+		t.Fatalf("status: got %d want 405", resp.StatusCode)
+	}
+}
+
 // Sentinel test to confirm the fake satisfies the interface.
 var _ SendMessageAPI = (*fakeSQS)(nil)
