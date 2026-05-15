@@ -58,8 +58,8 @@ func TestTransactionService_Create_ValidatesRequiredFields(t *testing.T) {
 		{"description missing", domain.CreateTransactionParams{}},
 		{"date missing", domain.CreateTransactionParams{Description: "x"}},
 		{"amount_cents zero", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14"}},
-		{"account_id zero", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14", AmountCents: -1500}},
 		{"category_id zero", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14", AmountCents: -1500, AccountID: 1}},
+		{"neither account_id nor credit_card_id", domain.CreateTransactionParams{Description: "x", Date: "2026-05-14", AmountCents: -1500, CategoryID: 10}},
 	}
 	for _, c := range cases {
 		c := c
@@ -69,6 +69,69 @@ func TestTransactionService_Create_ValidatesRequiredFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTransactionService_Create_AccountRouting(t *testing.T) {
+	base := domain.CreateTransactionParams{
+		Description: "x", Date: "2026-05-14", AmountCents: -1500, CategoryID: 10,
+	}
+	cardID := int64(386176)
+	invoiceID := int64(317)
+
+	t.Run("rejects account_id + credit_card_id (silent-drop trap)", func(t *testing.T) {
+		in := base
+		in.AccountID = 1
+		in.CreditCardID = &cardID
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Create(context.Background(), in); !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("err=%v, want ErrValidation", err)
+		}
+	})
+
+	t.Run("rejects credit_card_invoice_id without credit_card_id", func(t *testing.T) {
+		in := base
+		in.AccountID = 1
+		in.CreditCardInvoiceID = &invoiceID
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Create(context.Background(), in); !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("err=%v, want ErrValidation", err)
+		}
+	})
+
+	t.Run("accepts credit_card_id alone", func(t *testing.T) {
+		in := base
+		in.CreditCardID = &cardID
+		repo := &fakeTransactionRepo{}
+		svc := NewTransactionService(repo)
+		if _, err := svc.Create(context.Background(), in); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if repo.created.AccountID != 0 {
+			t.Errorf("AccountID must stay zero when only credit_card_id is set; got %d", repo.created.AccountID)
+		}
+		if repo.created.CreditCardID == nil || *repo.created.CreditCardID != 386176 {
+			t.Errorf("CreditCardID = %v", repo.created.CreditCardID)
+		}
+	})
+
+	t.Run("accepts credit_card_id + credit_card_invoice_id", func(t *testing.T) {
+		in := base
+		in.CreditCardID = &cardID
+		in.CreditCardInvoiceID = &invoiceID
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Create(context.Background(), in); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	})
+
+	t.Run("accepts account_id alone (existing behaviour)", func(t *testing.T) {
+		in := base
+		in.AccountID = 1
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Create(context.Background(), in); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	})
 }
 
 func TestTransactionService_Create_Succeeds(t *testing.T) {
