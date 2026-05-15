@@ -5,27 +5,27 @@
 **Goal:** Build the Go source + Makefiles + GitHub Actions deploy pipelines for the three components that together form the stats ingestion pipeline:
 
 1. **Ingest Lambda** (`organizze-mcp-stats-ingest`) — HTTPS Function URL endpoint that authenticates an upstream caller via a shared secret and forwards raw JSON onto an SQS queue.
-2. **Consumer Lambda** (`organizze-mcp-stats-consumer`) — SQS-triggered worker that inserts each message into a Postgres `stats_events` table with idempotent semantics (deduplicated on SQS message ID), reporting partial batch failures back to Lambda so only failed records get retried.
+2. **Consumer container** (`jorgejr568/organizze-mcp-ingestion-consumer` on Docker Hub) — long-running Docker container that polls SQS itself (long-poll `ReceiveMessage` + per-message `DeleteMessage`) and inserts each message into a Postgres `stats_events` table with idempotent semantics (deduplicated on SQS message ID). Operator-deployed to ECS / Fargate / k8s / a VM — not a Lambda.
 3. **MCP-side stats reporter** — a background, fire-and-forget reporter inside the existing MCP server (`internal/stats/` + an instrumentation hook on every tool registration) that POSTs one small, non-sensitive event per tool call to the ingest Function URL. Opt-out via `MCP_STATS_OPTOUT=1` (default ON). Tool-call latency is not affected: events go through a buffered channel and are dropped (with a log warning) if the queue is full.
 
-**Architecture:** Each Lambda lives in its own self-contained Go module (`cmd/ingest/` and `cmd/consumer/`) so the AWS Lambda runtime, AWS SDK v2, and `pgx` dependencies do not pollute the root MCP server module. Handler logic in `cmd/{ingest,consumer}/internal/handler/` is decoupled from runtime entry points via narrow interfaces (`SendMessageAPI` for ingest, `StatsStore` for consumer), enabling table-driven unit tests with fakes. The consumer's Postgres implementation lives in `cmd/consumer/internal/store/` and is exercised by an integration test gated behind a `//go:build integration` tag.
+**Architecture:** Both components live in their own self-contained Go modules (`cmd/ingest/` and `cmd/consumer/`) so the AWS SDK v2 and `pgx` dependencies do not pollute the root MCP server module. Ingest is an AWS Lambda using `lambda.Start`; consumer is a regular long-running process whose `main.go` owns the SQS poll loop (long-poll `ReceiveMessage`, per-message `DeleteMessage` on success, graceful shutdown on SIGTERM/SIGINT). Handler logic in `cmd/{ingest,consumer}/internal/handler/` is decoupled from runtime entry points via narrow interfaces (`SendMessageAPI` for ingest, `StatsStore` for consumer). The consumer's handler takes domain types (`[]Record` → `Result`) — no Lambda event types — so the same handler is used by tests and the poll loop. The consumer's Postgres implementation lives in `cmd/consumer/internal/store/` and is exercised by an integration test gated behind a `//go:build integration` tag.
 
 The MCP-side reporter lives in `internal/stats/` (sibling of `internal/{domain,usecase,adapter}`). It exposes a small `Reporter` interface; the production `HTTPReporter` owns a buffered channel + a single drain goroutine that POSTs each event with a 3s timeout. `NoopReporter` is used when stats are opted-out or when no ingest URL is configured. The MCP adapter (`internal/adapter/mcp/`) wraps every tool handler with `addInstrumentedTool`, which times the call, classifies any returned error (`domain.ErrValidation` → `"validation"`, `domain.ErrRateLimited` → `"rate_limited"`, etc.), and hands a populated `Event` to the reporter — all on the return path so a slow ingest endpoint cannot stall a tool response.
 
-Two new GitHub Actions workflows (`.github/workflows/ingest.yml`, `.github/workflows/consumer.yml`) deploy the Lambdas. The existing `.github/workflows/release.yml` (Docker image) is extended to inject the ingest URL + token into the binary via `-ldflags` so officially-released artifacts ship with stats enabled by default. Local `go build` and PR CI do not inject these, so dev builds and unofficial forks are silent — `NoopReporter` is selected at runtime.
+Two new GitHub Actions workflows: `.github/workflows/ingest.yml` ships the ingest Lambda via `aws lambda update-function-code`; `.github/workflows/consumer.yml` builds and pushes the consumer Docker image (`jorgejr568/organizze-mcp-ingestion-consumer:latest` + `:sha-<short>`) to Docker Hub using the existing `secrets.DOCKERHUB_USERNAME` / `secrets.DOCKERHUB_TOKEN`. The existing `.github/workflows/release.yml` (MCP Docker image) is extended to inject the ingest URL + token into the binary via `-ldflags` so officially-released artifacts ship with stats enabled by default. Local `go build` and PR CI do not inject these, so dev builds and unofficial forks are silent — `NoopReporter` is selected at runtime.
 
 **Tech Stack:** Go 1.25, `github.com/aws/aws-lambda-go`, `github.com/aws/aws-sdk-go-v2/{config,service/sqs}` (ingest), `github.com/jackc/pgx/v5` + `pgxpool` (consumer), stdlib `net/http`/`log`/`crypto/subtle`/`encoding/json` (MCP reporter). AWS CLI v2 + `aws-actions/configure-aws-credentials@v4` in CI.
 
 **Assumptions about already-provisioned infrastructure** (flag back if any are wrong):
 
-- **Consumer Lambda is Terraform-provisioned out-of-band**, same way the ingest Lambda is. Function name: `organizze-mcp-stats-consumer`. Runtime: `provided.al2023`. Arch: `arm64`. Region: `us-east-1`. Memory: 256 MB (more headroom than ingest because of pgx + TLS). Timeout: 30s.
-- **An SQS event source mapping** connects the same queue the ingest writes to (`STATS_QUEUE_URL`) to the consumer Lambda. The mapping has `FunctionResponseTypes = ["ReportBatchItemFailures"]` so the consumer's `BatchItemFailures` response is honored.
-- **The consumer's IAM exec role** has `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes`, `sqs:ChangeMessageVisibility` on the queue ARN, plus VPC + Secrets Manager access if the Postgres DSN comes from there. Network reachability to Postgres (security groups, NAT/VPC endpoint) is assumed working.
-- **`STATS_DATABASE_URL`** is injected into the consumer's env vars by Terraform, formatted as a libpq URI (`postgres://user:pass@host:5432/db?sslmode=require`).
-- **Deployer IAM user `organizze-mcp-deployer`** has `lambda:UpdateFunctionCode` / `GetFunction` / `UpdateFunctionConfiguration` / `PublishVersion` scoped to **both** function ARNs. Credentials are reused for both workflows via these repo-level GitHub Actions inputs (the naming is misleading — they cover the whole pipeline, not just ingest):
+- **Consumer ships as a Docker image** to Docker Hub at `jorgejr568/organizze-mcp-ingestion-consumer`. Tags are `:latest` and `:sha-<7char>` on every merge to `main` touching `cmd/consumer/**`. Operator-deployed to ECS / Fargate / k8s / a VM — the deployment target is not owned by this repo. There is **no** consumer Lambda and **no** event source mapping; the consumer polls SQS directly.
+- **The consumer's runtime needs** `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes` on the queue ARN — supplied via an IAM role on the host (preferred) or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` env vars. Network reachability to Postgres is the operator's concern.
+- **`STATS_DATABASE_URL`** + **`STATS_QUEUE_URL`** + **`AWS_REGION`** are passed in via env vars by the operator (or whatever orchestrator wraps the container), formatted as a libpq URI for the DSN.
+- **Ingest deployer IAM user `organizze-mcp-deployer`** has `lambda:UpdateFunctionCode` / `GetFunction` / `UpdateFunctionConfiguration` / `PublishVersion` scoped to the ingest function ARN. Credentials are reused by `ingest.yml` via these repo-level GitHub Actions inputs:
   - `secrets.INGESTION_DEPLOY_AWS_ACCESS_KEY_ID` (secret)
   - `secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY` (secret)
   - `vars.INGESTION_DEPLOY_AWS_REGION` (**variable, not secret** — the region is non-sensitive)
+- **Consumer Docker workflow** reuses the existing repo-level `secrets.DOCKERHUB_USERNAME` / `secrets.DOCKERHUB_TOKEN` already used by `release.yml`. No new secrets required.
 - **Database migration is applied out-of-band** via `psql` against the live database **before the first consumer deploy**. The Lambda itself does **not** run migrations on cold start. The single SQL file at `cmd/consumer/migrations/001_init.sql` is the source of truth.
 - **Ingest Function URL** is recorded as `vars.INGESTION_DEPLOY_URL` so the `release.yml` workflow can bake it into Docker images. The matching shared secret is stored as `secrets.INGESTION_DEPLOY_TOKEN` and must equal the live shared-secret value stored in AWS Secrets Manager (whose ARN is `INGEST_SHARED_SECRET_ARN` on the Lambda) — rotate both in lockstep via `aws secretsmanager update-secret`. If either is empty at build time, the released binary falls back to `NoopReporter` and no stats are emitted.
 - **Deployer IAM user** also needs `secretsmanager:UpdateSecret` (and the Lambda exec role needs `secretsmanager:GetSecretValue`) on the shared-secret ARN — both are Terraform concerns, but listed here so rotation does not get blocked on a missing IAM grant.
@@ -47,19 +47,20 @@ Two new GitHub Actions workflows (`.github/workflows/ingest.yml`, `.github/workf
 - `cmd/ingest/README.md`.
 - `.github/workflows/ingest.yml` — test (PR + push) + deploy (push-to-main).
 
-**New files — Part B: Consumer Lambda**
+**New files — Part B: Consumer container**
 
-- `cmd/consumer/go.mod` — independent module `github.com/jorgejr568/organizze-mcp/cmd/consumer`, Go 1.25.
+- `cmd/consumer/go.mod` — independent module `github.com/jorgejr568/organizze-mcp/cmd/consumer`, Go 1.25. Depends on `aws-sdk-go-v2/{config,service/sqs}` + `pgx/v5` — no `aws-lambda-go`.
 - `cmd/consumer/go.sum`
-- `cmd/consumer/main.go` — reads `STATS_DATABASE_URL`, builds `pgxpool`, pings, calls `lambda.Start`.
-- `cmd/consumer/internal/handler/handler.go` — `Handler` struct, `StatsStore` interface, `Handle(ctx, events.SQSEvent)` method.
+- `cmd/consumer/main.go` — reads env, builds `pgxpool` + SQS client, runs the long-running SQS poll loop, handles SIGTERM/SIGINT gracefully.
+- `cmd/consumer/internal/handler/handler.go` — `Handler` struct, `StatsStore` interface, `Process(ctx, []Record) Result` method. Domain types only — no Lambda event types.
 - `cmd/consumer/internal/handler/handler_test.go` — table-driven tests with a fake store.
 - `cmd/consumer/internal/store/pgstore.go` — `PGStore` implementing `StatsStore` over `pgxpool.Pool`.
 - `cmd/consumer/internal/store/pgstore_integration_test.go` — gated by `//go:build integration`; skipped unless `STATS_DATABASE_URL_TEST` is set.
 - `cmd/consumer/migrations/001_init.sql` — `stats_events` table + indexes. Source of truth, applied via `psql` (or the `make migrate-up` shortcut).
-- `cmd/consumer/Makefile` — `build`, `zip`, `deploy`, `test`, `test-integration`, `migrate-up`, `clean`.
+- `cmd/consumer/Makefile` — `build`, `test`, `test-integration`, `migrate-up`, `docker`, `docker-push`, `clean`.
+- `cmd/consumer/Dockerfile` — multi-stage build (golang:1.25-alpine → gcr.io/distroless/static:nonroot). Build context is the repo root.
 - `cmd/consumer/README.md`.
-- `.github/workflows/consumer.yml`.
+- `.github/workflows/consumer.yml` — test (PR + push) + Docker build & push (push-to-main).
 
 **New files — Part C: MCP-side stats reporter**
 
@@ -1267,43 +1268,18 @@ EOF
 **Files:**
 - Create: `cmd/consumer/internal/handler/handler.go`
 
-- [ ] **Step 1: Write `cmd/consumer/internal/handler/handler.go`**
+- [ ] **Step 1: Write `cmd/consumer/internal/handler/handler.go`** with
+  domain types only — no Lambda imports:
+  - `StatsStore` interface: `Insert(ctx, messageID string, payload []byte) error`.
+  - `Record` struct: `{MessageID string; Body []byte}` — what callers (the poll loop, tests) hand in.
+  - `Result` struct: `{FailedMessageIDs []string}` — what the handler returns; the caller leaves those messages in the queue for redelivery.
+  - `Handler` struct: `{Store StatsStore; Log *log.Logger}`.
+  - `Process(ctx, []Record) Result` method (stub returns zero value; logic lands in Tasks 14–15).
 
-```go
-// Package handler implements the AWS Lambda SQS-event handler for the
-// stats consumer. Each invocation receives a batch of SQS messages; the
-// handler stores each one and reports per-message failures back to Lambda
-// so only failed records get redelivered.
-package handler
-
-import (
-	"context"
-	"log"
-
-	"github.com/aws/aws-lambda-go/events"
-)
-
-// StatsStore is the narrow persistence interface the handler depends on.
-// PGStore (in cmd/consumer/internal/store) is the production implementation;
-// tests substitute a fake.
-type StatsStore interface {
-	// Insert persists a single SQS message body. Implementations MUST be
-	// idempotent — duplicate messageID is not an error, it is a no-op.
-	Insert(ctx context.Context, messageID string, payload []byte) error
-}
-
-// Handler holds the runtime dependencies that survive across Lambda
-// invocations (cold-start initialization).
-type Handler struct {
-	Store StatsStore
-	Log   *log.Logger
-}
-
-// Handle is the Lambda SQS-trigger entrypoint. Logic lands in Tasks 14–15.
-func (h *Handler) Handle(ctx context.Context, evt events.SQSEvent) (events.SQSEventResponse, error) {
-	return events.SQSEventResponse{}, nil
-}
-```
+  See `cmd/consumer/internal/handler/handler.go` on disk for the
+  canonical version. The point is to keep this package free of
+  `events.SQSEvent` / `events.SQSEventResponse` so the same handler
+  drives both the production poll loop and the tests.
 
 - [ ] **Step 2: Verify it compiles**
 
@@ -1317,9 +1293,11 @@ git add cmd/consumer/internal/handler/handler.go
 git commit -m "$(cat <<'EOF'
 feat(consumer): introduce handler skeleton and StatsStore seam
 
-The persistence dependency is behind a narrow interface so handler
-tests can use a fake and the production pgx implementation can ship
-in a separate file with its own integration test.
+Domain types (Record / Result) — no Lambda event types — so the
+same handler powers tests and the poll loop. The persistence
+dependency is behind a narrow interface so handler tests can use a
+fake and the production pgx implementation can ship in a separate
+file with its own integration test.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -1328,132 +1306,30 @@ EOF
 
 ---
 
-## Task 14: TDD — happy path + empty event
+## Task 14: TDD — happy path + empty batch
 
 **Files:**
 - Create: `cmd/consumer/internal/handler/handler_test.go`
 - Modify: `cmd/consumer/internal/handler/handler.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests** using domain types only:
+  - `fakeStore` with a `calls []call` slice + optional `errByMsg map[string]error`.
+  - Helper `rec(id, body string) Record` builds a `Record`.
+  - `TestProcess_EmptyBatch_NoFailures` — `Process(ctx, nil)` returns zero failures and no store calls.
+  - `TestProcess_SingleRecord_PersistsAndReportsNoFailures` — one record, store called once with matching ID + payload, no failures returned.
 
-Create `cmd/consumer/internal/handler/handler_test.go`:
+  See `cmd/consumer/internal/handler/handler_test.go` on disk for the canonical version.
 
-```go
-package handler
-
-import (
-	"context"
-	"errors"
-	"io"
-	"log"
-	"testing"
-
-	"github.com/aws/aws-lambda-go/events"
-)
-
-type call struct {
-	messageID string
-	payload   []byte
-}
-
-type fakeStore struct {
-	calls    []call
-	errByMsg map[string]error // optional: return err for specific message IDs
-}
-
-func (s *fakeStore) Insert(_ context.Context, messageID string, payload []byte) error {
-	s.calls = append(s.calls, call{messageID: messageID, payload: append([]byte(nil), payload...)})
-	if err, ok := s.errByMsg[messageID]; ok {
-		return err
-	}
-	return nil
-}
-
-func newHandler(t *testing.T, store StatsStore) *Handler {
-	t.Helper()
-	return &Handler{
-		Store: store,
-		Log:   log.New(io.Discard, "", 0),
-	}
-}
-
-func sqsRec(id, body string) events.SQSMessage {
-	return events.SQSMessage{MessageId: id, Body: body}
-}
-
-func TestHandle_EmptyEvent_NoFailures(t *testing.T) {
-	store := &fakeStore{}
-	h := newHandler(t, store)
-	resp, err := h.Handle(context.Background(), events.SQSEvent{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resp.BatchItemFailures) != 0 {
-		t.Fatalf("expected 0 failures, got %d", len(resp.BatchItemFailures))
-	}
-	if len(store.calls) != 0 {
-		t.Fatalf("expected 0 store calls, got %d", len(store.calls))
-	}
-}
-
-func TestHandle_SingleRecord_PersistsAndReportsNoFailures(t *testing.T) {
-	store := &fakeStore{}
-	h := newHandler(t, store)
-
-	body := `{"stat":"page_view","count":3}`
-	resp, err := h.Handle(context.Background(), events.SQSEvent{
-		Records: []events.SQSMessage{sqsRec("msg-1", body)},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resp.BatchItemFailures) != 0 {
-		t.Fatalf("expected 0 failures, got %d (%v)", len(resp.BatchItemFailures), resp.BatchItemFailures)
-	}
-	if len(store.calls) != 1 {
-		t.Fatalf("expected 1 store call, got %d", len(store.calls))
-	}
-	if store.calls[0].messageID != "msg-1" {
-		t.Fatalf("messageID: got %q want msg-1", store.calls[0].messageID)
-	}
-	if string(store.calls[0].payload) != body {
-		t.Fatalf("payload: got %q want %q", store.calls[0].payload, body)
-	}
-}
-
-// Sentinel: fakeStore satisfies the interface at compile time.
-var _ StatsStore = (*fakeStore)(nil)
-var _ = errors.New // referenced in later tests
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run tests to verify the single-record test fails against the stub**
 
 Run: `cd cmd/consumer && go test ./internal/handler/ -v`
-Expected: `TestHandle_EmptyEvent_NoFailures` PASSES (the stub already returns empty failures), `TestHandle_SingleRecord_PersistsAndReportsNoFailures` FAILS with `expected 1 store call, got 0`.
+Expected: empty-batch test passes (stub already returns zero failures), single-record test fails with `expected 1 store call, got 0`.
 
-- [ ] **Step 3: Implement the happy path**
+- [ ] **Step 3: Implement `Process`** in `cmd/consumer/internal/handler/handler.go`:
 
-Replace `Handle` in `cmd/consumer/internal/handler/handler.go`:
-
-```go
-func (h *Handler) Handle(ctx context.Context, evt events.SQSEvent) (events.SQSEventResponse, error) {
-	logger := h.Log
-	if logger == nil {
-		logger = log.Default()
-	}
-
-	var failures []events.SQSBatchItemFailure
-	for _, rec := range evt.Records {
-		if err := h.Store.Insert(ctx, rec.MessageId, []byte(rec.Body)); err != nil {
-			logger.Printf("[%s] store insert failed: %v", rec.MessageId, err)
-			failures = append(failures, events.SQSBatchItemFailure{ItemIdentifier: rec.MessageId})
-			continue
-		}
-		logger.Printf("[%s] persisted (%d bytes)", rec.MessageId, len(rec.Body))
-	}
-	return events.SQSEventResponse{BatchItemFailures: failures}, nil
-}
-```
+  - Loop over `records`, call `h.Store.Insert(ctx, rec.MessageID, rec.Body)`.
+  - On error, log + append the message ID to a local `failed` slice; do NOT short-circuit.
+  - Return `Result{FailedMessageIDs: failed}`.
 
 - [ ] **Step 4: Re-run tests**
 
@@ -1465,12 +1341,12 @@ Expected: both tests PASS.
 ```bash
 git add cmd/consumer/internal/handler/handler.go cmd/consumer/internal/handler/handler_test.go
 git commit -m "$(cat <<'EOF'
-feat(consumer): persist each SQS record via the StatsStore seam
+feat(consumer): persist each record via the StatsStore seam
 
-Iterate the batch, propagating context, and log each persistence with
-the SQS message ID as the correlation key. Empty batches are a valid
-input (Lambda may send heartbeat-like empty invocations on event
-source mapping startup) and return an empty response.
+Iterate the batch, propagating context, and log each persistence
+with the SQS message ID as the correlation key. Empty batches are
+valid (the poll loop may receive zero-message responses from long
+polling) and return an empty Result.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -1484,47 +1360,16 @@ EOF
 **Files:**
 - Modify: `cmd/consumer/internal/handler/handler_test.go`
 
-- [ ] **Step 1: Add the failing test**
+- [ ] **Step 1: Add a `TestProcess_PartialFailure_ReportsOnlyFailedMessages` test**:
+  - Three records; the middle one's message ID maps to a synthetic error in `fakeStore.errByMsg`.
+  - Assert `len(res.FailedMessageIDs) == 1` and the lone failure ID matches.
+  - Assert `len(store.calls) == 3` — the handler must NOT short-circuit; every record in the batch is attempted.
 
-Append to `handler_test.go`:
-
-```go
-func TestHandle_PartialFailure_ReportsOnlyFailedMessages(t *testing.T) {
-	storeErr := errors.New("connection refused")
-	store := &fakeStore{
-		errByMsg: map[string]error{"msg-bad": storeErr},
-	}
-	h := newHandler(t, store)
-
-	resp, err := h.Handle(context.Background(), events.SQSEvent{
-		Records: []events.SQSMessage{
-			sqsRec("msg-1", `{"a":1}`),
-			sqsRec("msg-bad", `{"b":2}`),
-			sqsRec("msg-3", `{"c":3}`),
-		},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(resp.BatchItemFailures) != 1 {
-		t.Fatalf("expected 1 failure, got %d (%v)", len(resp.BatchItemFailures), resp.BatchItemFailures)
-	}
-	if got := resp.BatchItemFailures[0].ItemIdentifier; got != "msg-bad" {
-		t.Fatalf("failure ItemIdentifier: got %q want msg-bad", got)
-	}
-
-	// The handler must NOT short-circuit on a record failure — every record
-	// in the batch should have been attempted.
-	if len(store.calls) != 3 {
-		t.Fatalf("expected 3 store attempts, got %d", len(store.calls))
-	}
-}
-```
+  See `cmd/consumer/internal/handler/handler_test.go` on disk for the canonical version.
 
 - [ ] **Step 2: Run it**
 
-Run: `cd cmd/consumer && go test ./internal/handler/ -run TestHandle_PartialFailure -v`
+Run: `cd cmd/consumer && go test ./internal/handler/ -run TestProcess_PartialFailure -v`
 Expected: PASS. (Task 14's implementation already handles this — this test pins the contract so it doesn't regress to short-circuiting later.)
 
 If it does **not** pass, the implementation in Task 14 has a bug — fix it before continuing.
@@ -1541,12 +1386,12 @@ git add cmd/consumer/internal/handler/handler_test.go
 git commit -m "$(cat <<'EOF'
 test(consumer): pin partial-batch-failure contract
 
-SQS event source mappings with ReportBatchItemFailures only redeliver
-the message IDs the function returns in BatchItemFailures. Anything
-missing from that list is treated as 'successfully processed' and
-deleted from the queue. This test pins both invariants: one failure
-in a batch of three returns exactly one identifier, and the other two
-records are still attempted (no early exit).
+The poll loop deletes only messages whose IDs are NOT in
+Result.FailedMessageIDs; everything else is left for SQS to
+redeliver after the visibility timeout. This test pins both
+invariants: one failure in a batch of three returns exactly one
+identifier, and the other two records are still attempted (no
+early exit).
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -1735,95 +1580,52 @@ EOF
 
 ---
 
-## Task 17: Wire consumer `main.go`
+## Task 17: Wire consumer `main.go` (long-running poll loop)
 
 **Files:**
 - Modify: `cmd/consumer/main.go`
 
-- [ ] **Step 1: Replace the stub `main.go`**
+The consumer is a long-running container, not a Lambda. `main.go` owns
+the SQS poll loop directly (long-poll `ReceiveMessage` with batch size
+10 + 20s wait, per-message `DeleteMessage` on success, transient receive
+errors back off briefly and continue, SIGTERM/SIGINT triggers graceful
+shutdown via `signal.NotifyContext`). Handler types are domain types
+(`[]Record` → `Result`) — no `events.SQSEvent` anywhere in `cmd/consumer`.
 
-```go
-package main
+- [ ] **Step 1: Replace the stub `main.go`** with the long-running poll
+  loop. The shape:
+  - `signal.NotifyContext(SIGINT, SIGTERM)` for graceful shutdown.
+  - Build `pgxpool` + ping with a 5s deadline (fail fast on bad DSN).
+  - Build `sqs.NewFromConfig(config.LoadDefaultConfig(ctx))`.
+  - `for { ctx.Err? -> return; ReceiveMessage; Process; DeleteMessage on success }`.
+  - Transient receive error → 2s ctx-cancellable backoff.
 
-import (
-	"context"
-	"log"
-	"os"
-	"time"
+  See `cmd/consumer/main.go` on disk for the canonical version.
 
-	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/jorgejr568/organizze-mcp/cmd/consumer/internal/handler"
-	"github.com/jorgejr568/organizze-mcp/cmd/consumer/internal/store"
-)
-
-func main() {
-	dsn := mustEnv("STATS_DATABASE_URL")
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		log.Fatalf("pgxpool.New: %v", err)
-	}
-
-	// Fail fast on a bad DSN: ping with a short deadline at cold start
-	// instead of crashing on the first invocation.
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := pool.Ping(pingCtx); err != nil {
-		log.Fatalf("postgres ping: %v", err)
-	}
-
-	h := &handler.Handler{
-		Store: store.New(pool),
-		Log:   log.Default(),
-	}
-
-	lambda.Start(h.Handle)
-}
-
-func mustEnv(key string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		log.Fatalf("missing required env var %s", key)
-	}
-	return v
-}
-```
-
-- [ ] **Step 2: Tidy + build**
+- [ ] **Step 2: Update deps + build**
 
 ```bash
 cd cmd/consumer
+go get github.com/aws/aws-sdk-go-v2/config@latest
+go get github.com/aws/aws-sdk-go-v2/service/sqs@latest
 go mod tidy
 go build ./...
 ```
 
-Expected: exit 0.
+`aws-lambda-go` should drop out of `go.mod`.
 
-- [ ] **Step 3: Cross-compile for the Lambda target**
-
-```bash
-cd cmd/consumer
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap ./
-file bootstrap
-```
-
-Expected: ELF 64-bit aarch64. Clean up: `rm bootstrap`.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add cmd/consumer/main.go cmd/consumer/go.mod cmd/consumer/go.sum
 git commit -m "$(cat <<'EOF'
-feat(consumer): wire main.go to lambda.Start with pgxpool init
+feat(consumer): own the SQS poll loop in main.go
 
-Build the pool once at cold start and ping with a 5s deadline so a
-bad DSN or unreachable Postgres surfaces immediately instead of
-crashing on the first SQS invocation. Connections are reused across
-warm invocations — pgxpool handles re-establishment if the server
-drops idle conns.
+The consumer is a long-running container, not a Lambda. main.go runs
+the ReceiveMessage / DeleteMessage loop itself (long-poll, batch 10,
+transient receive errors back off briefly). signal.NotifyContext
+threads SIGTERM/SIGINT into the loop so the in-flight batch
+completes before exit.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -1832,74 +1634,45 @@ EOF
 
 ---
 
-## Task 18: Consumer Makefile
+## Task 18: Consumer Makefile + Dockerfile
 
 **Files:**
 - Create: `cmd/consumer/Makefile`
+- Create: `cmd/consumer/Dockerfile`
 
-- [ ] **Step 1: Write `cmd/consumer/Makefile`**
+- [ ] **Step 1: Write `cmd/consumer/Makefile`**. Targets:
+  - `build` — native binary at `./consumer` (handy for `go run` testing).
+  - `test` / `test-integration` — race tests; integration test gated on `STATS_DATABASE_URL_TEST`.
+  - `migrate-up` — `psql -v ON_ERROR_STOP=1 -f migrations/001_init.sql`.
+  - `docker` — `cd ../.. && docker build -f cmd/consumer/Dockerfile -t jorgejr568/organizze-mcp-ingestion-consumer:$(IMAGE_TAG) .` (build context is the repo root).
+  - `docker-push` — depends on `docker`; pushes the tag.
+  - `clean` — removes the local binary.
 
-```make
-.PHONY: build zip deploy test test-integration migrate-up clean
+- [ ] **Step 2: Write `cmd/consumer/Dockerfile`** as a two-stage build:
+  - `FROM golang:1.25-alpine AS build` — copies `cmd/consumer/go.{mod,sum}`, `go mod download`, then copies the rest and `go build -trimpath -ldflags='-s -w' -o /out/consumer ./`. `CGO_ENABLED=0` + `GOARCH=${TARGETARCH:-amd64}` for multi-arch.
+  - `FROM gcr.io/distroless/static:nonroot` — copies the binary to `/usr/local/bin/consumer`, runs as `nonroot:nonroot`, `ENTRYPOINT ["/usr/local/bin/consumer"]`.
 
-FUNCTION_NAME := organizze-mcp-stats-consumer
-BINARY := bootstrap
-ZIP := function.zip
-MIGRATION := migrations/001_init.sql
-
-build:
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-		go build -tags lambda.norpc -ldflags='-s -w' -o $(BINARY) ./
-
-zip: build
-	rm -f $(ZIP)
-	zip -j $(ZIP) $(BINARY)
-
-deploy: zip
-	aws lambda update-function-code \
-		--function-name $(FUNCTION_NAME) \
-		--zip-file fileb://$(ZIP) \
-		--publish
-
-test:
-	go test -race -count=1 ./...
-
-test-integration:
-	@test -n "$$STATS_DATABASE_URL_TEST" || (echo "STATS_DATABASE_URL_TEST must be set" >&2; exit 1)
-	go test -tags integration -race -count=1 ./...
-
-migrate-up:
-	@test -n "$$STATS_DATABASE_URL" || (echo "STATS_DATABASE_URL must be set (use the target DB's DSN)" >&2; exit 1)
-	psql "$$STATS_DATABASE_URL" -v ON_ERROR_STOP=1 -f $(MIGRATION)
-
-clean:
-	rm -f $(BINARY) $(ZIP)
-```
-
-- [ ] **Step 2: Verify each non-DB target locally**
+- [ ] **Step 3: Verify locally**
 
 ```bash
 cd cmd/consumer
-make test     # all 3 handler tests pass
-make build    # produces ./bootstrap, arm64 linux
-make zip      # produces ./function.zip
-unzip -l function.zip   # bootstrap at the root
-make clean
+make test                       # 3 handler tests pass
+make build && make clean        # native binary builds + cleans
+cd ../..
+docker build -f cmd/consumer/Dockerfile -t organizze-mcp-ingestion-consumer:local .   # if docker is available
 ```
 
-Expected: each step succeeds. Skip `make migrate-up`, `make deploy`, `make test-integration` unless you have the corresponding credentials.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add cmd/consumer/Makefile
+git add cmd/consumer/Makefile cmd/consumer/Dockerfile
 git commit -m "$(cat <<'EOF'
-chore(consumer): add Makefile targets
+chore(consumer): Makefile + Dockerfile for container build
 
-migrate-up shells out to psql so the operator can apply the schema
-without installing a Go-native migration tool. Both 'deploy' and
-'migrate-up' refuse to run without their required env var so a
-misconfigured shell can't accidentally hit the wrong target.
+docker target builds with the repo root as context so the
+Dockerfile can COPY cmd/consumer/go.{mod,sum} before COPYing the
+rest of cmd/consumer/. Multi-stage build keeps the runtime image
+distroless/static:nonroot — no shell, no package manager.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -1913,98 +1686,22 @@ EOF
 **Files:**
 - Create: `cmd/consumer/README.md`
 
-- [ ] **Step 1: Write `cmd/consumer/README.md`**
+- [ ] **Step 1: Write `cmd/consumer/README.md`** documenting:
+  - Pipeline shape: `upstream → ingest Lambda → SQS queue → consumer container → stats_events (Postgres)`.
+  - "Not a Lambda" callout up top — long-running container deployed to ECS / Fargate / k8s / a VM.
+  - Local commands (`make test`, `make build`, `make docker`, `make docker-push`, `make migrate-up`, `make test-integration`, `make clean`).
+  - Schema table (`stats_events`).
+  - Deploy: CI builds + pushes to `jorgejr568/organizze-mcp-ingestion-consumer` on Docker Hub. Operator runs the image wherever; required env vars are `STATS_DATABASE_URL`, `STATS_QUEUE_URL`, `AWS_REGION` + AWS credentials (IAM role preferred).
+  - Failure model: success → DeleteMessage; failure → leave for redelivery after visibility timeout. SQS at-least-once + `ON CONFLICT DO NOTHING` keeps redelivery safe. SIGTERM/SIGINT triggers graceful shutdown.
 
-```markdown
-# Stats Consumer Lambda
-
-SQS-triggered AWS Lambda that drains the stats queue and persists each
-message into the `stats_events` Postgres table. Built for the
-`organizze-mcp-stats-consumer` function (Go custom runtime on
-`provided.al2023`, arm64). Idempotent on the SQS message ID — duplicate
-deliveries are silently de-duplicated by `ON CONFLICT DO NOTHING` against
-the `UNIQUE` constraint on `stats_events.message_id`.
-
-## Pipeline shape
-
-```
-upstream → ingest Lambda → SQS queue → consumer Lambda → stats_events (Postgres)
-```
-
-## Local commands
-
-```bash
-make test               # unit tests with race detector
-make build              # cross-compile linux/arm64 bootstrap binary
-make zip                # bundle bootstrap into function.zip
-make clean              # remove bootstrap and function.zip
-make migrate-up         # apply migrations/001_init.sql via psql
-                        #   requires STATS_DATABASE_URL
-make test-integration   # run pgstore tests against a real Postgres
-                        #   requires STATS_DATABASE_URL_TEST
-```
-
-## Schema (`stats_events`)
-
-| Column        | Type          | Notes                                        |
-| ------------- | ------------- | -------------------------------------------- |
-| `id`          | `BIGSERIAL`   | PK.                                          |
-| `message_id`  | `TEXT UNIQUE` | SQS message ID. Drives idempotency.          |
-| `payload`     | `JSONB`       | Raw body forwarded by the ingest Lambda.     |
-| `received_at` | `TIMESTAMPTZ` | `DEFAULT NOW()`. Indexed for time-range queries. |
-
-The schema lives in `migrations/001_init.sql`. Apply it **before** the
-first deploy:
-
-```bash
-export STATS_DATABASE_URL='postgres://...?sslmode=require'
-make migrate-up
-```
-
-The Lambda does **not** run migrations on cold start; the operator owns
-schema changes.
-
-## Deploy
-
-CI handles this automatically on push to `main` (see
-`.github/workflows/consumer.yml`). For a manual deploy from a workstation
-you need the `organizze-mcp-deployer` IAM user's credentials exported:
-
-```bash
-make deploy
-```
-
-## Runtime environment
-
-| Var                   | Source                       | Purpose                                              |
-| --------------------- | ---------------------------- | ---------------------------------------------------- |
-| `STATS_DATABASE_URL`  | Terraform (already injected) | libpq URI; pgxpool dial string.                      |
-| `AWS_REGION`          | Lambda runtime               | Used by the SDK default credential chain (if added). |
-
-The function has no other AWS API calls; its IAM exec role just needs
-SQS receive/delete on the source queue (handled by the event source
-mapping, not by the function code).
-
-## Failure model
-
-The handler iterates the batch and calls `StatsStore.Insert` for each
-record. Each record's outcome is independent:
-
-- **Success** → not included in the response → SQS deletes the message.
-- **Failure** → identifier added to `BatchItemFailures` → SQS redelivers
-  *only that message*.
-
-The event source mapping must have
-`FunctionResponseTypes = ["ReportBatchItemFailures"]` for this contract to
-hold; without it, a single failure would re-deliver the entire batch.
-```
+  See `cmd/consumer/README.md` on disk for the canonical version.
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add cmd/consumer/README.md
 git commit -m "$(cat <<'EOF'
-docs(consumer): document pipeline shape, schema, env vars, failure model
+docs(consumer): document container image, env vars, failure model
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -2018,94 +1715,11 @@ EOF
 **Files:**
 - Create: `.github/workflows/consumer.yml`
 
-- [ ] **Step 1: Write `.github/workflows/consumer.yml`**
+- [ ] **Step 1: Write `.github/workflows/consumer.yml`** with two jobs:
+  - `test` (PR + push): vet + `go test -race -count=1 ./...` + `go build ./...` with `working-directory: cmd/consumer`.
+  - `docker` (push to `main` only): `docker/setup-qemu-action@v4`, `docker/setup-buildx-action@v4`, `docker/login-action@v4` with `secrets.DOCKERHUB_USERNAME` / `secrets.DOCKERHUB_TOKEN`, `docker/metadata-action@v6` emitting `:latest` + `:sha-<short>` tags for `jorgejr568/organizze-mcp-ingestion-consumer`, then `docker/build-push-action@v7` with `context: .` and `file: cmd/consumer/Dockerfile`, platforms `linux/amd64,linux/arm64`, `cache-from: type=gha` / `cache-to: type=gha,mode=max`.
 
-```yaml
-name: Consumer Lambda
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'cmd/consumer/**'
-      - '.github/workflows/consumer.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'cmd/consumer/**'
-      - '.github/workflows/consumer.yml'
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: consumer-${{ github.ref }}
-  cancel-in-progress: false
-
-jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cmd/consumer
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: cmd/consumer/go.sum
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -race -count=1 ./...
-
-      - name: Build (linux/arm64)
-        run: make build
-
-  deploy:
-    name: Deploy
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cmd/consumer
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: cmd/consumer/go.sum
-
-      - name: Build + package
-        run: make zip
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.INGESTION_DEPLOY_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.INGESTION_DEPLOY_AWS_REGION }}
-
-      - name: Update Lambda function code
-        run: |
-          aws lambda update-function-code \
-            --function-name organizze-mcp-stats-consumer \
-            --zip-file fileb://function.zip \
-            --publish
-```
-
-The same `INGESTION_DEPLOY_AWS_*` inputs as the ingest workflow — `vars.*` for region, `secrets.*` for the access key + secret key. The deployer IAM user must already have `lambda:UpdateFunctionCode` on the consumer function's ARN; this is an out-of-band Terraform concern.
+  No AWS credentials anywhere. No `aws lambda update-function-code`. There is no consumer Lambda.
 
 - [ ] **Step 2: Validate the YAML**
 
@@ -2120,13 +1734,14 @@ Expected: `OK`.
 ```bash
 git add .github/workflows/consumer.yml
 git commit -m "$(cat <<'EOF'
-ci(consumer): add test + deploy workflow for stats consumer lambda
+ci(consumer): build + push Docker image on merge to main
 
-Mirror the ingest workflow: vet + race tests + arm64 cross-compile on
-PRs touching cmd/consumer/**, deploy on push to main using the shared
-INGESTION_DEPLOY_AWS_* inputs (key+secret in secrets.*, region in
-vars.*). The deployer IAM user's policy must already include the
-consumer function ARN — that's Terraform's job, not this repo's.
+Test job runs vet + race tests + go build on every PR. Docker job
+runs only on push to main: multi-arch (amd64 + arm64) build via
+buildx + QEMU, push to Docker Hub at
+jorgejr568/organizze-mcp-ingestion-consumer with :latest +
+:sha-<short> tags. Reuses the existing DOCKERHUB_USERNAME /
+DOCKERHUB_TOKEN repo secrets — no new secrets.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -3187,17 +2802,17 @@ MCP server (internal/stats HTTPReporter, fire-and-forget)
 cmd/ingest (Function URL, shared-secret auth)
    ↓ SQS SendMessage (raw body)
 SQS queue
-   ↓ event source mapping with ReportBatchItemFailures
-cmd/consumer (SQS trigger, idempotent INSERT)
+   ↓ ReceiveMessage / DeleteMessage long-poll
+cmd/consumer (long-running container, idempotent INSERT)
    ↓ INSERT ... ON CONFLICT DO NOTHING
 stats_events (Postgres)
 ```
 
-Each Lambda is an **independent Go module** (`cmd/ingest/go.mod`,
-`cmd/consumer/go.mod`) so the Lambda runtime, AWS SDK v2, and pgx
-dependencies do not pollute the MCP server module. Root-level
-`go test ./...` does **not** descend into either Lambda module; use
-`cd cmd/<name> && make test` or rely on the per-Lambda workflows.
+Ingest and consumer are **independent Go modules** (`cmd/ingest/go.mod`,
+`cmd/consumer/go.mod`) so AWS SDK v2 and pgx dependencies do not
+pollute the MCP server module. Root-level `go test ./...` does **not**
+descend into either module; use `cd cmd/<name> && make test` or rely
+on the per-component workflows.
 
 The MCP-side reporter lives in `internal/stats/` (a sibling of
 `internal/{domain,usecase,adapter}`). Tool registrations go through
@@ -3205,19 +2820,16 @@ The MCP-side reporter lives in `internal/stats/` (a sibling of
 times the call, classifies the error via a small fixed vocabulary,
 and hands a populated `Event` to the reporter on the return path.
 
-- **Function names:** `organizze-mcp-stats-ingest`, `organizze-mcp-stats-consumer` (both `provided.al2023`, `arm64`, `us-east-1`).
-- **Infra owner:** both functions, the SQS queue, the event source mapping, and the Postgres connectivity are Terraform-provisioned in a separate repo. Do not change function name, runtime, memory, timeout, queue ARN, or DB DSN from here.
-- **Lambda deploys:** push to `main` touching `cmd/<name>/**` triggers `.github/workflows/<name>.yml` using:
-  - `secrets.INGESTION_DEPLOY_AWS_ACCESS_KEY_ID`
-  - `secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY`
-  - `vars.INGESTION_DEPLOY_AWS_REGION` (**variable, not secret**)
+- **Targets:** ingest is the AWS Lambda `organizze-mcp-stats-ingest` (`provided.al2023`, `arm64`, `us-east-1`). Consumer is a Docker image at `jorgejr568/organizze-mcp-ingestion-consumer` on Docker Hub — operator-deployed to ECS / Fargate / k8s / a VM, not a Lambda.
+- **Infra owner:** the ingest function, the SQS queue, the Secrets Manager secret for the ingest token, and the Postgres are Terraform-provisioned in a separate repo. The consumer's deployment target is operator-owned and out of scope here.
+- **Deploys:** push to `main` touching `cmd/ingest/**` triggers `.github/workflows/ingest.yml` which calls `aws lambda update-function-code` using `secrets.INGESTION_DEPLOY_AWS_ACCESS_KEY_ID` / `secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY` / `vars.INGESTION_DEPLOY_AWS_REGION` (region is a **variable, not secret**). Push to `main` touching `cmd/consumer/**` triggers `.github/workflows/consumer.yml` which builds and pushes the Docker image using `secrets.DOCKERHUB_USERNAME` / `secrets.DOCKERHUB_TOKEN`. The deployer IAM user is NOT scoped to a consumer Lambda — there isn't one.
 - **MCP-side build-time defaults** (officially-released Docker images only):
   - `vars.INGESTION_DEPLOY_URL` — Function URL of the ingest Lambda
   - `secrets.INGESTION_DEPLOY_TOKEN` — must match the live shared-secret value stored in AWS Secrets Manager (the ARN of which is `INGEST_SHARED_SECRET_ARN` on the ingest Lambda); rotate both together via `aws secretsmanager update-secret`. See `cmd/ingest/README.md`.
 - **MCP runtime overrides / opt-out:** `MCP_STATS_OPTOUT=1` disables stats entirely; `MCP_STATS_INGEST_URL` / `MCP_STATS_INGEST_TOKEN` override the build-time defaults.
-- **Lambda runtime env vars:**
+- **Runtime env vars:**
   - Ingest: `STATS_QUEUE_URL`, `INGEST_SHARED_SECRET_ARN` (Secrets Manager ARN — rotate the secret value via `aws secretsmanager update-secret`; see `cmd/ingest/README.md`).
-  - Consumer: `STATS_DATABASE_URL` (Terraform-injected libpq URI).
+  - Consumer: `STATS_DATABASE_URL` (libpq URI), `STATS_QUEUE_URL` (SQS queue URL), `AWS_REGION`; AWS credentials via the host's IAM role or env-var creds with sqs:ReceiveMessage / DeleteMessage / GetQueueAttributes on the queue ARN.
 - **Database schema:** `cmd/consumer/migrations/001_init.sql` is the source of truth. Apply out-of-band via `cd cmd/consumer && make migrate-up` before schema-affecting changes.
 - **Idempotency:** consumer uses `INSERT ... ON CONFLICT (message_id) DO NOTHING`, so SQS at-least-once redelivery is a safe no-op.
 - **Non-sensitivity invariant:** the MCP `Event` must contain only non-sensitive fields (tool name, status, error_class from a fixed vocabulary, timing, version, transport). No tool arguments, no return values, no account IDs, no free-text error messages. New fields require explicit review against this rule.
@@ -3231,7 +2843,7 @@ Under the existing `## [Unreleased]` section (or create one), add:
 
 ```markdown
 ### Added
-- **Stats pipeline** (`cmd/ingest/` + `cmd/consumer/` + `internal/stats/`): end-to-end telemetry from the MCP server to a Postgres-backed event store. Every MCP tool call emits a small non-sensitive event (tool name, duration, success/error status, coarse error class — never arguments, return values, or free-text error messages) on a background goroutine to a Function-URL-fronted ingest Lambda; the ingest forwards raw JSON to SQS; an SQS-triggered consumer Lambda persists each message into a `stats_events` JSONB table with idempotent `INSERT ... ON CONFLICT DO NOTHING` semantics. Two new GitHub Actions workflows (`ingest.yml`, `consumer.yml`) build, package, and deploy each Lambda on push to `main` touching the respective subdirectory; the existing `release.yml` Docker workflow is extended to bake the ingest URL (`vars.INGESTION_DEPLOY_URL`) and token (`secrets.INGESTION_DEPLOY_TOKEN`) into officially-released binaries via `-ldflags`. Set `MCP_STATS_OPTOUT=1` to disable.
+- **Stats pipeline** (`cmd/ingest/` + `cmd/consumer/` + `internal/stats/`): end-to-end telemetry from the MCP server to a Postgres-backed event store. Every MCP tool call emits a small non-sensitive event (tool name, duration, success/error status, coarse error class — never arguments, return values, or free-text error messages) on a background goroutine to a Function-URL-fronted ingest Lambda; the ingest forwards raw JSON to SQS; a long-running consumer container (Docker image `jorgejr568/organizze-mcp-ingestion-consumer` on Docker Hub) polls SQS and persists each message into a `stats_events` JSONB table with idempotent `INSERT ... ON CONFLICT DO NOTHING` semantics. Two new GitHub Actions workflows: `ingest.yml` builds and ships the ingest Lambda via `aws lambda update-function-code`; `consumer.yml` builds and pushes the consumer Docker image to Docker Hub on push to `main` touching the respective subdirectory; the existing `release.yml` Docker workflow is extended to bake the ingest URL (`vars.INGESTION_DEPLOY_URL`) and token (`secrets.INGESTION_DEPLOY_TOKEN`) into officially-released binaries via `-ldflags`. Set `MCP_STATS_OPTOUT=1` to disable.
 ```
 
 - [ ] **Step 3: Final repo-wide build + test sweep**
@@ -3293,7 +2905,7 @@ gh pr create --title "feat: stats pipeline — ingest + consumer lambdas + MCP-s
 ## Summary
 
 - **Ingest Lambda** (`cmd/ingest/`): standalone Go module implementing an AWS Lambda HTTP ingest endpoint (`organizze-mcp-stats-ingest`). Authenticates an `X-Ingest-Token` shared-secret header, validates a non-empty JSON body, and forwards the raw bytes to SQS via `SendMessage`. Deploys via `.github/workflows/ingest.yml`.
-- **Consumer Lambda** (`cmd/consumer/`): standalone Go module implementing an SQS-triggered AWS Lambda (`organizze-mcp-stats-consumer`) that persists each message into a `stats_events` Postgres table with idempotent `INSERT ... ON CONFLICT (message_id) DO NOTHING` semantics and partial-batch-failure reporting. Schema lives in `cmd/consumer/migrations/001_init.sql`; applied out-of-band via `make migrate-up`. Deploys via `.github/workflows/consumer.yml`.
+- **Consumer container** (`cmd/consumer/`): standalone Go module implementing a long-running container that polls SQS and persists each message into a `stats_events` Postgres table with idempotent `INSERT ... ON CONFLICT (message_id) DO NOTHING` semantics. Ships as `jorgejr568/organizze-mcp-ingestion-consumer` on Docker Hub; operator-deployed to ECS / Fargate / k8s / a VM — not a Lambda. Schema lives in `cmd/consumer/migrations/001_init.sql`; applied out-of-band via `make migrate-up`. Built + pushed via `.github/workflows/consumer.yml`.
 - **MCP-side reporter** (`internal/stats/` + `internal/adapter/mcp/instrument.go`): fire-and-forget HTTP reporter that emits one small non-sensitive event per MCP tool call to the ingest Function URL. Buffered + drop-on-overflow so a slow ingest endpoint never affects tool-call latency. Opt-out via `MCP_STATS_OPTOUT=1` (default ON for officially-released artifacts). Build-time ingest URL/token injected via `-ldflags` from `vars.INGESTION_DEPLOY_URL` + `secrets.INGESTION_DEPLOY_TOKEN` in `release.yml`; dev builds leave them empty and fall back to `NoopReporter`.
 
 ## Why
@@ -3302,12 +2914,12 @@ The three components are conceptually one feature — none of them is useful on 
 
 ## Pre-merge checklist (out-of-band, not in this PR)
 
-- [ ] Deployer IAM user (`organizze-mcp-deployer`) has `lambda:UpdateFunctionCode` etc. scoped to **both** function ARNs.
-- [ ] Repo secrets exist: `INGESTION_DEPLOY_AWS_ACCESS_KEY_ID`, `INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY`, `INGESTION_DEPLOY_TOKEN`.
+- [ ] Deployer IAM user (`organizze-mcp-deployer`) has `lambda:UpdateFunctionCode` etc. scoped to the **ingest** function ARN. (No consumer Lambda exists.)
+- [ ] Repo secrets exist: `INGESTION_DEPLOY_AWS_ACCESS_KEY_ID`, `INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY`, `INGESTION_DEPLOY_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 - [ ] Repo variables exist: `INGESTION_DEPLOY_AWS_REGION` (e.g. `us-east-1`), `INGESTION_DEPLOY_URL` (Function URL of the ingest Lambda).
 - [ ] `INGESTION_DEPLOY_TOKEN` value matches the live shared-secret value stored in AWS Secrets Manager (the ARN of which is `INGEST_SHARED_SECRET_ARN` on the ingest function). Rotate both with `aws secretsmanager update-secret`.
 - [ ] Postgres schema applied: `cd cmd/consumer && STATS_DATABASE_URL=... make migrate-up`.
-- [ ] Consumer's SQS event source mapping has `FunctionResponseTypes = ["ReportBatchItemFailures"]`.
+- [ ] Consumer's deployment target (ECS / Fargate / k8s / VM / Compose) is configured with `STATS_DATABASE_URL`, `STATS_QUEUE_URL`, `AWS_REGION`, and AWS credentials (IAM role preferred) with sqs:ReceiveMessage / DeleteMessage / GetQueueAttributes on the queue ARN.
 
 ## Test Plan
 
@@ -3317,7 +2929,7 @@ The three components are conceptually one feature — none of them is useful on 
 - [ ] `make build` produces a binary; `strings bin/organizze-mcp | grep -c 'DefaultIngest'` shows the ldflag symbols (empty values are fine)
 - [ ] `make build INGEST_URL=https://example.invalid INGEST_TOKEN=t` injects the values (verify with `strings`)
 - [ ] `docker build --build-arg INGEST_URL=https://example.invalid --build-arg INGEST_TOKEN=t -t organizze-mcp:local .` succeeds
-- [ ] GitHub Actions `CI / Test`, `Ingest Lambda / Test`, and `Consumer Lambda / Test` jobs are green on this PR
+- [ ] GitHub Actions `CI / Test`, `Ingest Lambda / Test`, and `Consumer / Test` jobs are green on this PR
 - [ ] After merge, both Lambda deploys + the next Docker release (on tag push) succeed
 - [ ] Smoke-test ingest: correct token (expect 202), wrong token (expect 401), GET (expect 405)
 - [ ] End-to-end: start the MCP server from a Docker image built with the real `INGESTION_DEPLOY_URL` + `INGESTION_DEPLOY_TOKEN`, invoke a tool, then `SELECT * FROM stats_events ORDER BY id DESC LIMIT 1` and confirm a `{"type":"tool_call",...}` row appears
@@ -3336,7 +2948,7 @@ until [ "$(gh pr view "$PR" --json statusCheckRollup --jq '[.statusCheckRollup[]
 gh pr view "$PR" --json statusCheckRollup --jq '.statusCheckRollup'
 ```
 
-Expected: every check (`CI / Test`, `Ingest Lambda / Test`, `Consumer Lambda / Test`) has `"conclusion":"SUCCESS"`. Deploy jobs are push-to-main gated and won't run on the PR.
+Expected: every check (`CI / Test`, `Ingest Lambda / Test`, `Consumer / Test`) has `"conclusion":"SUCCESS"`. Deploy / Docker push jobs are push-to-main gated and won't run on the PR.
 
 - [ ] **Step 4: Hand off**
 
@@ -3352,23 +2964,25 @@ Print the URL and stop.
 
 **Files:** none.
 
-- [ ] **Step 1: Confirm both Lambda deploy workflows ran**
+- [ ] **Step 1: Confirm both workflows ran**
 
 ```bash
 gh run list --workflow=ingest.yml --limit 3
 gh run list --workflow=consumer.yml --limit 3
 ```
 
-Expected: `Deploy` jobs for the merge commit succeed.
+Expected: `Deploy` job on the ingest workflow + `Build and push Docker image` job on the consumer workflow both succeed for the merge commit.
 
-- [ ] **Step 2: Confirm both Lambdas picked up the new code**
+- [ ] **Step 2: Confirm the ingest Lambda picked up the new code and the consumer image is on Docker Hub**
 
 ```bash
-for fn in organizze-mcp-stats-ingest organizze-mcp-stats-consumer; do
-  echo "=== $fn ==="
-  aws lambda get-function --function-name "$fn" \
-    --query 'Configuration.{LastModified:LastModified,Version:Version,Runtime:Runtime,Arch:Architectures}'
-done
+aws lambda get-function --function-name organizze-mcp-stats-ingest \
+  --query 'Configuration.{LastModified:LastModified,Version:Version,Runtime:Runtime,Arch:Architectures}'
+
+# Consumer image — confirm the sha-tagged version landed on Docker Hub.
+docker pull jorgejr568/organizze-mcp-ingestion-consumer:latest
+docker image inspect jorgejr568/organizze-mcp-ingestion-consumer:latest \
+  --format '{{ .Created }} {{ .Architecture }}'
 ```
 
 - [ ] **Step 3: Tag a release to exercise the MCP-side build-time injection**
@@ -3420,9 +3034,10 @@ If any of these have never been done on the live infrastructure, surface them:
 
 - Secrets Manager secret referenced by `INGEST_SHARED_SECRET_ARN` exists and its value equals `secrets.INGESTION_DEPLOY_TOKEN` (rotate both via `aws secretsmanager update-secret`).
 - Migration applied (`cd cmd/consumer && make migrate-up`).
-- SQS event source mapping has `FunctionResponseTypes = ["ReportBatchItemFailures"]`.
+- Consumer container is running somewhere with the correct env vars + AWS credentials.
 - Repo variable `INGESTION_DEPLOY_URL` set to the live Function URL.
 - Repo secret `INGESTION_DEPLOY_TOKEN` set, matching the Secrets Manager value referenced by `INGEST_SHARED_SECRET_ARN`.
+- Repo secrets `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` set (reused from `release.yml`).
 
 ---
 
@@ -3431,7 +3046,7 @@ If any of these have never been done on the live infrastructure, surface them:
 Plan complete and saved to `docs/superpowers/plans/2026-05-15-ingest-lambda.md`. The plan now spans **three sub-projects**:
 
 - **Part A — Ingest Lambda** (Tasks 1–11)
-- **Part B — Consumer Lambda** (Tasks 12–20)
+- **Part B — Consumer container** (Tasks 12–20)
 - **Part C — MCP-side stats reporter** (Tasks 21–25)
 - Plus docs / PR / verification (Tasks 26–28)
 
