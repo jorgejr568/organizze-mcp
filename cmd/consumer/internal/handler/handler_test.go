@@ -6,8 +6,6 @@ import (
 	"io"
 	"log"
 	"testing"
-
-	"github.com/aws/aws-lambda-go/events"
 )
 
 type call struct {
@@ -36,38 +34,31 @@ func newHandler(t *testing.T, store StatsStore) *Handler {
 	}
 }
 
-func sqsRec(id, body string) events.SQSMessage {
-	return events.SQSMessage{MessageId: id, Body: body}
+func rec(id, body string) Record {
+	return Record{MessageID: id, Body: []byte(body)}
 }
 
-func TestHandle_EmptyEvent_NoFailures(t *testing.T) {
+func TestProcess_EmptyBatch_NoFailures(t *testing.T) {
 	store := &fakeStore{}
 	h := newHandler(t, store)
-	resp, err := h.Handle(context.Background(), events.SQSEvent{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resp.BatchItemFailures) != 0 {
-		t.Fatalf("expected 0 failures, got %d", len(resp.BatchItemFailures))
+	res := h.Process(context.Background(), nil)
+	if len(res.FailedMessageIDs) != 0 {
+		t.Fatalf("expected 0 failures, got %d", len(res.FailedMessageIDs))
 	}
 	if len(store.calls) != 0 {
 		t.Fatalf("expected 0 store calls, got %d", len(store.calls))
 	}
 }
 
-func TestHandle_SingleRecord_PersistsAndReportsNoFailures(t *testing.T) {
+func TestProcess_SingleRecord_PersistsAndReportsNoFailures(t *testing.T) {
 	store := &fakeStore{}
 	h := newHandler(t, store)
 
 	body := `{"stat":"page_view","count":3}`
-	resp, err := h.Handle(context.Background(), events.SQSEvent{
-		Records: []events.SQSMessage{sqsRec("msg-1", body)},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resp.BatchItemFailures) != 0 {
-		t.Fatalf("expected 0 failures, got %d (%v)", len(resp.BatchItemFailures), resp.BatchItemFailures)
+	res := h.Process(context.Background(), []Record{rec("msg-1", body)})
+
+	if len(res.FailedMessageIDs) != 0 {
+		t.Fatalf("expected 0 failures, got %v", res.FailedMessageIDs)
 	}
 	if len(store.calls) != 1 {
 		t.Fatalf("expected 1 store call, got %d", len(store.calls))
@@ -80,29 +71,24 @@ func TestHandle_SingleRecord_PersistsAndReportsNoFailures(t *testing.T) {
 	}
 }
 
-func TestHandle_PartialFailure_ReportsOnlyFailedMessages(t *testing.T) {
+func TestProcess_PartialFailure_ReportsOnlyFailedMessages(t *testing.T) {
 	storeErr := errors.New("connection refused")
 	store := &fakeStore{
 		errByMsg: map[string]error{"msg-bad": storeErr},
 	}
 	h := newHandler(t, store)
 
-	resp, err := h.Handle(context.Background(), events.SQSEvent{
-		Records: []events.SQSMessage{
-			sqsRec("msg-1", `{"a":1}`),
-			sqsRec("msg-bad", `{"b":2}`),
-			sqsRec("msg-3", `{"c":3}`),
-		},
+	res := h.Process(context.Background(), []Record{
+		rec("msg-1", `{"a":1}`),
+		rec("msg-bad", `{"b":2}`),
+		rec("msg-3", `{"c":3}`),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 
-	if len(resp.BatchItemFailures) != 1 {
-		t.Fatalf("expected 1 failure, got %d (%v)", len(resp.BatchItemFailures), resp.BatchItemFailures)
+	if len(res.FailedMessageIDs) != 1 {
+		t.Fatalf("expected 1 failure, got %d (%v)", len(res.FailedMessageIDs), res.FailedMessageIDs)
 	}
-	if got := resp.BatchItemFailures[0].ItemIdentifier; got != "msg-bad" {
-		t.Fatalf("failure ItemIdentifier: got %q want msg-bad", got)
+	if res.FailedMessageIDs[0] != "msg-bad" {
+		t.Fatalf("failure id: got %q want msg-bad", res.FailedMessageIDs[0])
 	}
 
 	// The handler must NOT short-circuit on a record failure — every record
