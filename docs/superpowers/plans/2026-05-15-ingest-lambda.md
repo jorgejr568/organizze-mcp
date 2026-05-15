@@ -27,7 +27,8 @@ Two new GitHub Actions workflows (`.github/workflows/ingest.yml`, `.github/workf
   - `secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY` (secret)
   - `vars.INGESTION_DEPLOY_AWS_REGION` (**variable, not secret** — the region is non-sensitive)
 - **Database migration is applied out-of-band** via `psql` against the live database **before the first consumer deploy**. The Lambda itself does **not** run migrations on cold start. The single SQL file at `cmd/consumer/migrations/001_init.sql` is the source of truth.
-- **Ingest Function URL** is recorded as `vars.INGESTION_DEPLOY_URL` so the `release.yml` workflow can bake it into Docker images. The matching shared secret is stored as `secrets.INGESTION_DEPLOY_TOKEN` and must equal the live function's `INGEST_SHARED_SECRET` (rotate both in lockstep). If either is empty at build time, the released binary falls back to `NoopReporter` and no stats are emitted.
+- **Ingest Function URL** is recorded as `vars.INGESTION_DEPLOY_URL` so the `release.yml` workflow can bake it into Docker images. The matching shared secret is stored as `secrets.INGESTION_DEPLOY_TOKEN` and must equal the live shared-secret value stored in AWS Secrets Manager (whose ARN is `INGEST_SHARED_SECRET_ARN` on the Lambda) — rotate both in lockstep via `aws secretsmanager update-secret`. If either is empty at build time, the released binary falls back to `NoopReporter` and no stats are emitted.
+- **Deployer IAM user** also needs `secretsmanager:UpdateSecret` (and the Lambda exec role needs `secretsmanager:GetSecretValue`) on the shared-secret ARN — both are Terraform concerns, but listed here so rotation does not get blocked on a missing IAM grant.
 
 **Repo-flow note:** AGENTS.md requires the worktree → branch → PR → CI-green → squash-merge cycle for every change. Do that for this work. Use branch `feat/stats-pipeline` and worktree `.claude/worktrees/stats-pipeline`. Do **not** push directly to `main`. Both Lambdas ship in a single PR — they're conceptually one feature (ingest is useless without a consumer).
 
@@ -735,9 +736,12 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/jorgejr568/organizze-mcp/cmd/ingest/internal/handler"
@@ -745,12 +749,15 @@ import (
 
 func main() {
 	queueURL := mustEnv("STATS_QUEUE_URL")
-	secret := mustEnv("INGEST_SHARED_SECRET")
+	secretARN := mustEnv("INGEST_SHARED_SECRET_ARN")
 
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("aws config: %v", err)
 	}
+
+	secret := fetchSharedSecret(ctx, cfg, secretARN)
 
 	h := &handler.Handler{
 		QueueURL: queueURL,
@@ -760,6 +767,26 @@ func main() {
 	}
 
 	lambda.Start(h.Handle)
+}
+
+// fetchSharedSecret materialises the X-Ingest-Token value from AWS Secrets
+// Manager at cold start. Failure is fatal: a misconfigured ARN is a deploy-time
+// bug, not a per-request condition, and silently 401-ing every request would
+// hide it. The 5s deadline keeps cold-starts bounded if Secrets Manager is slow.
+func fetchSharedSecret(ctx context.Context, cfg aws.Config, arn string) string {
+	fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	sm := secretsmanager.NewFromConfig(cfg)
+	out, err := sm.GetSecretValue(fetchCtx, &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(arn),
+	})
+	if err != nil {
+		log.Fatalf("fetch shared secret: %v", err)
+	}
+	if out.SecretString == nil || *out.SecretString == "" {
+		log.Fatalf("shared secret value is empty (SecretId=%s)", arn)
+	}
+	return *out.SecretString
 }
 
 func mustEnv(key string) string {
@@ -798,10 +825,13 @@ git add cmd/ingest/main.go cmd/ingest/go.mod cmd/ingest/go.sum
 git commit -m "$(cat <<'EOF'
 feat(ingest): wire main.go to lambda.Start with cold-start init
 
-Read STATS_QUEUE_URL and INGEST_SHARED_SECRET once at startup and fail
-fast if either is missing — better than crashing on every invocation.
-The SQS client is built from config.LoadDefaultConfig so Lambda's
-ambient STS env vars are picked up automatically.
+Read STATS_QUEUE_URL and INGEST_SHARED_SECRET_ARN once at startup and
+fail fast if either is missing, then fetch the actual shared-secret
+string from AWS Secrets Manager before lambda.Start. Failure is fatal
+— a misconfigured ARN is a deploy bug and silently 401-ing every
+request would hide it. The SQS client is built from
+config.LoadDefaultConfig so Lambda's ambient STS env vars are picked
+up automatically.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -927,32 +957,40 @@ aws lambda update-function-code \
 ## Runtime environment
 
 The Lambda reads two env vars at cold start and fails fast if either is
-missing:
+missing, then fetches the actual shared-secret value from AWS Secrets
+Manager:
 
-| Var                    | Source                          | Purpose                                                |
-| ---------------------- | ------------------------------- | ------------------------------------------------------ |
-| `STATS_QUEUE_URL`      | Terraform (already injected)    | Target SQS queue URL.                                  |
-| `INGEST_SHARED_SECRET` | Lambda config (set out-of-band) | Must match the `X-Ingest-Token` header on requests.    |
-| `AWS_REGION`           | Lambda runtime                  | Used by the SDK default credential chain.              |
+| Var                        | Source                          | Purpose                                                       |
+| -------------------------- | ------------------------------- | ------------------------------------------------------------- |
+| `STATS_QUEUE_URL`          | Terraform (already injected)    | Target SQS queue URL.                                         |
+| `INGEST_SHARED_SECRET_ARN` | Terraform (already injected)    | Secrets Manager ARN whose value is the `X-Ingest-Token` string. |
+| `AWS_REGION`               | Lambda runtime                  | Used by the SDK default credential chain.                     |
 
 AWS credentials come from the exec role's STS env vars — the function does
-not read static creds. Outbound calls are limited to `sqs:SendMessage` on
-the configured queue ARN.
+not read static creds. Outbound AWS calls are limited to
+`secretsmanager:GetSecretValue` on the configured secret ARN and
+`sqs:SendMessage` on the configured queue ARN.
 
 ### Rotating the shared secret
 
-`INGEST_SHARED_SECRET` is **not** set by Terraform; the deployer must update
-it via `update-function-configuration` (requires the deployer user's
-`lambda:UpdateFunctionConfiguration` permission, which is already in scope):
+The token value lives in AWS Secrets Manager (referenced by the ARN in
+`INGEST_SHARED_SECRET_ARN`). Rotate it by updating the secret's value, not
+by touching the Lambda environment:
 
 ```bash
-aws lambda update-function-configuration \
-  --function-name organizze-mcp-stats-ingest \
-  --environment 'Variables={STATS_QUEUE_URL=<queue-url>,INGEST_SHARED_SECRET=<new-secret>}'
+aws secretsmanager update-secret \
+  --secret-id <arn-or-name> \
+  --secret-string '<new-token>'
 ```
 
-Pass **every** variable you want to keep — `update-function-configuration`
-replaces the entire env block, it does not merge.
+The new value is picked up on the next cold start; in-flight warm containers
+keep the old value until they recycle. To force an immediate cutover, also
+issue `aws lambda update-function-configuration` with any cosmetic change
+(e.g. bumping a `LAST_ROTATED_AT` env var) so Lambda spins fresh containers.
+
+Whenever you rotate, update the matching `secrets.INGESTION_DEPLOY_TOKEN`
+GitHub repo secret too — the MCP server's Docker images bake that value in
+at build time and authentication requires both sides to agree.
 
 ## Request contract
 
@@ -3175,10 +3213,10 @@ and hands a populated `Event` to the reporter on the return path.
   - `vars.INGESTION_DEPLOY_AWS_REGION` (**variable, not secret**)
 - **MCP-side build-time defaults** (officially-released Docker images only):
   - `vars.INGESTION_DEPLOY_URL` — Function URL of the ingest Lambda
-  - `secrets.INGESTION_DEPLOY_TOKEN` — must match the ingest Lambda's `INGEST_SHARED_SECRET`; rotate both together
+  - `secrets.INGESTION_DEPLOY_TOKEN` — must match the live shared-secret value stored in AWS Secrets Manager (the ARN of which is `INGEST_SHARED_SECRET_ARN` on the ingest Lambda); rotate both together via `aws secretsmanager update-secret`. See `cmd/ingest/README.md`.
 - **MCP runtime overrides / opt-out:** `MCP_STATS_OPTOUT=1` disables stats entirely; `MCP_STATS_INGEST_URL` / `MCP_STATS_INGEST_TOKEN` override the build-time defaults.
 - **Lambda runtime env vars:**
-  - Ingest: `STATS_QUEUE_URL` (Terraform-injected), `INGEST_SHARED_SECRET` (set via `aws lambda update-function-configuration`).
+  - Ingest: `STATS_QUEUE_URL`, `INGEST_SHARED_SECRET_ARN` (Secrets Manager ARN — rotate the secret value via `aws secretsmanager update-secret`; see `cmd/ingest/README.md`).
   - Consumer: `STATS_DATABASE_URL` (Terraform-injected libpq URI).
 - **Database schema:** `cmd/consumer/migrations/001_init.sql` is the source of truth. Apply out-of-band via `cd cmd/consumer && make migrate-up` before schema-affecting changes.
 - **Idempotency:** consumer uses `INSERT ... ON CONFLICT (message_id) DO NOTHING`, so SQS at-least-once redelivery is a safe no-op.
@@ -3267,7 +3305,7 @@ The three components are conceptually one feature — none of them is useful on 
 - [ ] Deployer IAM user (`organizze-mcp-deployer`) has `lambda:UpdateFunctionCode` etc. scoped to **both** function ARNs.
 - [ ] Repo secrets exist: `INGESTION_DEPLOY_AWS_ACCESS_KEY_ID`, `INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY`, `INGESTION_DEPLOY_TOKEN`.
 - [ ] Repo variables exist: `INGESTION_DEPLOY_AWS_REGION` (e.g. `us-east-1`), `INGESTION_DEPLOY_URL` (Function URL of the ingest Lambda).
-- [ ] `INGESTION_DEPLOY_TOKEN` value matches the live `INGEST_SHARED_SECRET` configured on the ingest function.
+- [ ] `INGESTION_DEPLOY_TOKEN` value matches the live shared-secret value stored in AWS Secrets Manager (the ARN of which is `INGEST_SHARED_SECRET_ARN` on the ingest function). Rotate both with `aws secretsmanager update-secret`.
 - [ ] Postgres schema applied: `cd cmd/consumer && STATS_DATABASE_URL=... make migrate-up`.
 - [ ] Consumer's SQS event source mapping has `FunctionResponseTypes = ["ReportBatchItemFailures"]`.
 
@@ -3380,11 +3418,11 @@ Run the same image with `MCP_STATS_OPTOUT=1` set, invoke a tool, and confirm **n
 
 If any of these have never been done on the live infrastructure, surface them:
 
-- `INGEST_SHARED_SECRET` set on the ingest function (must equal `secrets.INGESTION_DEPLOY_TOKEN`).
+- Secrets Manager secret referenced by `INGEST_SHARED_SECRET_ARN` exists and its value equals `secrets.INGESTION_DEPLOY_TOKEN` (rotate both via `aws secretsmanager update-secret`).
 - Migration applied (`cd cmd/consumer && make migrate-up`).
 - SQS event source mapping has `FunctionResponseTypes = ["ReportBatchItemFailures"]`.
 - Repo variable `INGESTION_DEPLOY_URL` set to the live Function URL.
-- Repo secret `INGESTION_DEPLOY_TOKEN` set, matching `INGEST_SHARED_SECRET`.
+- Repo secret `INGESTION_DEPLOY_TOKEN` set, matching the Secrets Manager value referenced by `INGEST_SHARED_SECRET_ARN`.
 
 ---
 

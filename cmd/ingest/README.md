@@ -39,32 +39,40 @@ aws lambda update-function-code \
 ## Runtime environment
 
 The Lambda reads two env vars at cold start and fails fast if either is
-missing:
+missing, then fetches the actual shared-secret value from AWS Secrets
+Manager:
 
-| Var                    | Source                          | Purpose                                                |
-| ---------------------- | ------------------------------- | ------------------------------------------------------ |
-| `STATS_QUEUE_URL`      | Terraform (already injected)    | Target SQS queue URL.                                  |
-| `INGEST_SHARED_SECRET` | Lambda config (set out-of-band) | Must match the `X-Ingest-Token` header on requests.    |
-| `AWS_REGION`           | Lambda runtime                  | Used by the SDK default credential chain.              |
+| Var                        | Source                          | Purpose                                                       |
+| -------------------------- | ------------------------------- | ------------------------------------------------------------- |
+| `STATS_QUEUE_URL`          | Terraform (already injected)    | Target SQS queue URL.                                         |
+| `INGEST_SHARED_SECRET_ARN` | Terraform (already injected)    | Secrets Manager ARN whose value is the `X-Ingest-Token` string. |
+| `AWS_REGION`               | Lambda runtime                  | Used by the SDK default credential chain.                     |
 
 AWS credentials come from the exec role's STS env vars — the function does
-not read static creds. Outbound calls are limited to `sqs:SendMessage` on
-the configured queue ARN.
+not read static creds. Outbound AWS calls are limited to
+`secretsmanager:GetSecretValue` on the configured secret ARN and
+`sqs:SendMessage` on the configured queue ARN.
 
 ### Rotating the shared secret
 
-`INGEST_SHARED_SECRET` is **not** set by Terraform; the deployer must update
-it via `update-function-configuration` (requires the deployer user's
-`lambda:UpdateFunctionConfiguration` permission, which is already in scope):
+The token value lives in AWS Secrets Manager (referenced by the ARN in
+`INGEST_SHARED_SECRET_ARN`). Rotate it by updating the secret's value, not
+by touching the Lambda environment:
 
 ```bash
-aws lambda update-function-configuration \
-  --function-name organizze-mcp-stats-ingest \
-  --environment 'Variables={STATS_QUEUE_URL=<queue-url>,INGEST_SHARED_SECRET=<new-secret>}'
+aws secretsmanager update-secret \
+  --secret-id <arn-or-name> \
+  --secret-string '<new-token>'
 ```
 
-Pass **every** variable you want to keep — `update-function-configuration`
-replaces the entire env block, it does not merge.
+The new value is picked up on the next cold start; in-flight warm containers
+keep the old value until they recycle. To force an immediate cutover, also
+issue `aws lambda update-function-configuration` with any cosmetic change
+(e.g. bumping a `LAST_ROTATED_AT` env var) so Lambda spins fresh containers.
+
+Whenever you rotate, update the matching `secrets.INGESTION_DEPLOY_TOKEN`
+GitHub repo secret too — the MCP server's Docker images bake that value in
+at build time and authentication requires both sides to agree.
 
 ## Request contract
 

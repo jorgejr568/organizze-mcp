@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-lambda-go v1.54.0
 	github.com/aws/aws-sdk-go-v2 v1.41.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.7
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.27
 )
 
