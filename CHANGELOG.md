@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-15
+
 ### Fixed
 - **`update_transaction` credit-card routing silently dropped `credit_card_id` on PUT.** Live audit against the Organizze sandbox confirmed `PUT /transactions/{id}` exhibits the same silent-drop trap as the POST endpoint fixed in v0.6.1: when both `account_id` and `credit_card_id` are in the body, Organizze nulls `credit_card_id` (and `credit_card_invoice_id`) and the transaction stays on / moves to the bank account. Three changes together close the trap on update:
   - Service-layer validation on `TransactionService.Update` rejects `account_id` + `credit_card_id` simultaneously with `domain.ErrValidation` and names the silent-drop trap; also rejects `credit_card_invoice_id` without `credit_card_id`.
