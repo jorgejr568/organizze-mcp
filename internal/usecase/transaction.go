@@ -66,6 +66,22 @@ func (s *TransactionService) Delete(ctx context.Context, id int64, p domain.Dele
 }
 
 func validateCreate(p domain.CreateTransactionParams) error {
+	checks := []func(domain.CreateTransactionParams) error{
+		validateCreateRequiredFields,
+		validateCreateAccountRouting,
+		validateCreateRecurrenceInstallmentsExclusive,
+		validateCreateRecurrence,
+		validateCreateInstallments,
+	}
+	for _, check := range checks {
+		if err := check(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCreateRequiredFields(p domain.CreateTransactionParams) error {
 	switch {
 	case p.Description == "":
 		return fmt.Errorf("%w: description is required", domain.ErrValidation)
@@ -76,9 +92,14 @@ func validateCreate(p domain.CreateTransactionParams) error {
 	case p.CategoryID == 0:
 		return fmt.Errorf("%w: category_id is required", domain.ErrValidation)
 	}
-	// Account routing: bank account vs credit card. Organizze silently drops
-	// credit_card_id when account_id is also set, so we reject the ambiguous
-	// shape up-front rather than let the transaction land on the wrong account.
+	return nil
+}
+
+// validateCreateAccountRouting enforces bank-account vs credit-card mutual
+// exclusion. Organizze silently drops credit_card_id when account_id is also
+// set, so we reject the ambiguous shape up-front rather than let the
+// transaction land on the wrong account.
+func validateCreateAccountRouting(p domain.CreateTransactionParams) error {
 	switch {
 	case p.AccountID == 0 && p.CreditCardID == nil:
 		return fmt.Errorf("%w: exactly one of account_id or credit_card_id is required (bank transaction vs credit-card transaction)", domain.ErrValidation)
@@ -87,19 +108,43 @@ func validateCreate(p domain.CreateTransactionParams) error {
 	case p.CreditCardInvoiceID != nil && p.CreditCardID == nil:
 		return fmt.Errorf("%w: credit_card_invoice_id requires credit_card_id", domain.ErrValidation)
 	}
+	return nil
+}
+
+func validateCreateRecurrenceInstallmentsExclusive(p domain.CreateTransactionParams) error {
 	if p.Recurrence != nil && p.Installments != nil {
 		return fmt.Errorf("%w: recurrence_attributes and installments_attributes are mutually exclusive", domain.ErrValidation)
 	}
-	if p.Recurrence != nil && !p.Recurrence.Periodicity.Valid() {
-		return fmt.Errorf("%w: recurrence.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
+	return nil
+}
+
+func validateCreateRecurrence(p domain.CreateTransactionParams) error {
+	if p.Recurrence == nil {
+		return nil
 	}
-	if p.Installments != nil {
-		if !p.Installments.Periodicity.Valid() {
-			return fmt.Errorf("%w: installments.periodicity must be one of %v", domain.ErrValidation, domain.AllPeriodicities)
-		}
-		if p.Installments.Total <= 0 {
-			return fmt.Errorf("%w: installments.total must be > 0", domain.ErrValidation)
-		}
+	return validatePeriodicity("recurrence", p.Recurrence.Periodicity)
+}
+
+func validateCreateInstallments(p domain.CreateTransactionParams) error {
+	if p.Installments == nil {
+		return nil
+	}
+	if err := validatePeriodicity("installments", p.Installments.Periodicity); err != nil {
+		return err
+	}
+	if p.Installments.Total <= 0 {
+		return fmt.Errorf("%w: installments.total must be > 0", domain.ErrValidation)
+	}
+	return nil
+}
+
+// validatePeriodicity is the shared periodicity check used by both recurrence
+// and installments. label is the field name prefix used in the error message
+// ("recurrence" or "installments"), matching the error messages the previous
+// inline checks produced.
+func validatePeriodicity(label string, period domain.Periodicity) error {
+	if !period.Valid() {
+		return fmt.Errorf("%w: %s.periodicity must be one of %v", domain.ErrValidation, label, domain.AllPeriodicities)
 	}
 	return nil
 }
