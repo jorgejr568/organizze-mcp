@@ -85,5 +85,31 @@ func TestHandle_NonPostMethod_Returns405(t *testing.T) {
 	}
 }
 
+func TestHandle_EmptyBody_Returns400(t *testing.T) {
+	h := newHandler(t, &fakeSQS{})
+	resp, err := h.Handle(context.Background(), req("POST", "", map[string]string{
+		"x-ingest-token": "super-secret",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatalf("status: got %d want 400", resp.StatusCode)
+	}
+}
+
+func TestHandle_InvalidJSON_Returns400(t *testing.T) {
+	h := newHandler(t, &fakeSQS{})
+	resp, err := h.Handle(context.Background(), req("POST", "not-json{", map[string]string{
+		"x-ingest-token": "super-secret",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatalf("status: got %d want 400", resp.StatusCode)
+	}
+}
+
 // Sentinel test to confirm the fake satisfies the interface.
 var _ SendMessageAPI = (*fakeSQS)(nil)

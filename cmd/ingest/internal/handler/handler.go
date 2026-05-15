@@ -6,6 +6,8 @@ package handler
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
+	"encoding/json"
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -44,6 +46,24 @@ func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLReques
 	if req.RequestContext.HTTP.Method != "POST" {
 		logger.Printf(prefix+"method %s rejected", req.RequestContext.HTTP.Method)
 		return jsonResponse(405, `{"error":"method not allowed"}`), nil
+	}
+
+	body := []byte(req.Body)
+	if req.IsBase64Encoded {
+		decoded, err := base64.StdEncoding.DecodeString(req.Body)
+		if err != nil {
+			logger.Print(prefix + "body: base64 decode failed")
+			return jsonResponse(400, `{"error":"invalid body encoding"}`), nil
+		}
+		body = decoded
+	}
+	if len(body) == 0 {
+		logger.Print(prefix + "body: empty")
+		return jsonResponse(400, `{"error":"empty body"}`), nil
+	}
+	if !json.Valid(body) {
+		logger.Print(prefix + "body: invalid json")
+		return jsonResponse(400, `{"error":"invalid json"}`), nil
 	}
 
 	return jsonResponse(500, `{"error":"not implemented"}`), nil
