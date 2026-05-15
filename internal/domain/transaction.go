@@ -1,5 +1,7 @@
 package domain
 
+import "slices"
+
 // Tag is a lightweight tag attached to a transaction.
 type Tag struct {
 	Name string `json:"name"`
@@ -92,12 +94,7 @@ var AllPeriodicities = []Periodicity{
 
 // Valid reports whether p is one of AllPeriodicities.
 func (p Periodicity) Valid() bool {
-	for _, v := range AllPeriodicities {
-		if p == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AllPeriodicities, p)
 }
 
 // UpdateTransactionParams describe a partial update; nil pointers are omitted
