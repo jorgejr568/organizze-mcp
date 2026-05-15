@@ -2,7 +2,12 @@
 
 BINARY := organizze-mcp
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=$(VERSION)'
+INGEST_URL ?=
+INGEST_TOKEN ?=
+LDFLAGS := -s -w \
+	-X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=$(VERSION)' \
+	-X 'github.com/jorgejr568/organizze-mcp/internal/stats.DefaultIngestURL=$(INGEST_URL)' \
+	-X 'github.com/jorgejr568/organizze-mcp/internal/stats.DefaultIngestToken=$(INGEST_TOKEN)'
 
 build:
 	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/organizze-mcp

@@ -19,6 +19,7 @@ import (
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/mcp"
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/organizze"
 	"github.com/jorgejr568/organizze-mcp/internal/config"
+	"github.com/jorgejr568/organizze-mcp/internal/stats"
 	"github.com/jorgejr568/organizze-mcp/internal/usecase"
 )
 
@@ -49,7 +50,7 @@ func run() error {
 
 // buildServer is the dependency-injection graph. It is the ONLY place that
 // imports both adapter/organizze and adapter/mcp concretes.
-func buildServer(cfg *config.Config) (*mcpsdk.Server, error) {
+func buildServer(ctx context.Context, cfg *config.Config, transport string) (*mcpsdk.Server, error) {
 	httpClient := organizze.NewClient(organizze.ClientOptions{Timeout: cfg.HTTPTimeout})
 
 	exec, err := organizze.NewRequestExecutor(organizze.RequestExecutorOptions{
@@ -66,6 +67,7 @@ func buildServer(cfg *config.Config) (*mcpsdk.Server, error) {
 	}
 
 	deps := mcp.Dependencies{
+		Reporter:    buildStatsReporter(ctx, transport),
 		User:        usecase.NewUserService(organizze.NewUserRepository(exec)),
 		Account:     usecase.NewAccountService(organizze.NewAccountRepository(exec)),
 		Category:    usecase.NewCategoryService(organizze.NewCategoryRepository(exec)),
@@ -79,7 +81,7 @@ func buildServer(cfg *config.Config) (*mcpsdk.Server, error) {
 }
 
 func runWithTransport(ctx context.Context, cfg *config.Config, t mcpsdk.Transport, name string) error {
-	s, err := buildServer(cfg)
+	s, err := buildServer(ctx, cfg, name)
 	if err != nil {
 		return err
 	}
@@ -89,7 +91,7 @@ func runWithTransport(ctx context.Context, cfg *config.Config, t mcpsdk.Transpor
 }
 
 func runHTTP(ctx context.Context, cfg *config.Config) error {
-	s, err := buildServer(cfg)
+	s, err := buildServer(ctx, cfg, "http")
 	if err != nil {
 		return err
 	}
@@ -131,4 +133,29 @@ func runHTTP(ctx context.Context, cfg *config.Config) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// buildStatsReporter picks the right stats reporter for this process.
+// Returns NoopReporter when stats are opted-out (MCP_STATS_OPTOUT=1) or when
+// neither the env override nor the build-time default supplies an ingest
+// URL + token pair. Released artifacts ship with the URL/token baked in via
+// -ldflags; un-stamped dev builds therefore default to NoopReporter unless
+// the operator sets the env vars at runtime.
+func buildStatsReporter(ctx context.Context, transport string) stats.Reporter {
+	if os.Getenv("MCP_STATS_OPTOUT") != "" {
+		return stats.NoopReporter{}
+	}
+	url := envOr("MCP_STATS_INGEST_URL", stats.DefaultIngestURL)
+	token := envOr("MCP_STATS_INGEST_TOKEN", stats.DefaultIngestToken)
+	if url == "" || token == "" {
+		return stats.NoopReporter{}
+	}
+	return stats.NewHTTPReporter(ctx, url, token, mcp.Version, transport, 256, nil)
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

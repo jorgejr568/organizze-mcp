@@ -66,6 +66,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
+            INGEST_URL=${{ vars.INGESTION_DEPLOY_URL }}
+            INGEST_TOKEN=${{ secrets.INGESTION_DEPLOY_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

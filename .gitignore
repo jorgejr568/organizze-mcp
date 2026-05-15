@@ -10,3 +10,7 @@ coverage.html
 .env
 .env.local
 .claude/worktrees/
+cmd/ingest/bootstrap
+cmd/ingest/function.zip
+cmd/consumer/bootstrap
+cmd/consumer/function.zip

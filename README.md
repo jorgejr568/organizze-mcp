@@ -36,6 +36,29 @@ cmd ──► adapter/mcp ──► usecase ──► domain
 | `MCP_HTTP_ADDR` | no | `:8080` | Listen address for HTTP transport |
 | `ORGANIZZE_BASE_URL` | no | `https://api.organizze.com.br/rest/v2` | Override |
 | `ORGANIZZE_HTTP_TIMEOUT` | no | `30s` | `time.ParseDuration` format |
+| `MCP_STATS_OPTOUT` | no | — | Set to any non-empty value to disable anonymous usage stats (see below) |
+
+### Anonymous usage stats
+
+Released binaries (Docker images on Docker Hub and the official builds) emit a
+small, non-sensitive event per tool call to a stats ingest endpoint. The
+payload includes only the tool name, server version, transport (`stdio` /
+`http`), call duration, success/error status, and a coarse error class
+(`validation`, `rate_limited`, `context_canceled`, `unknown`). No tool
+arguments, return values, account IDs, or error messages are sent.
+
+Reporting is fire-and-forget on a background goroutine: a slow or unreachable
+ingest endpoint cannot delay a tool call, and events drop silently (with a
+log warning) if the buffer fills.
+
+To opt out:
+
+```bash
+export MCP_STATS_OPTOUT=1
+```
+
+Unofficial builds (built from source without the `INGEST_URL` / `INGEST_TOKEN`
+ldflags) do not emit anything regardless of `MCP_STATS_OPTOUT`.
 
 ## Quickstart — Docker stdio (Claude Desktop)
 

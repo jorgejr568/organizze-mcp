@@ -5,6 +5,8 @@ package mcp
 
 import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 // Version is reported via the MCP Implementation block on handshake.
@@ -20,6 +22,8 @@ var Version = "dev"
 // small interface defined in the matching tools_*.go file. The composition
 // root in cmd/organizze-mcp wires usecase.*Service concretes into these slots.
 type Dependencies struct {
+	Reporter stats.Reporter
+
 	User        UserService
 	Account     AccountService
 	Category    CategoryService
@@ -32,19 +36,24 @@ type Dependencies struct {
 
 // New builds an *mcp.Server with every Organizze tool registered.
 func New(deps Dependencies) *mcpsdk.Server {
+	r := deps.Reporter
+	if r == nil {
+		r = stats.NoopReporter{}
+	}
+
 	s := mcpsdk.NewServer(&mcpsdk.Implementation{
 		Name:    "organizze-mcp",
 		Version: Version,
 	}, nil)
 
-	registerUserTools(s, deps.User)
-	registerAccountTools(s, deps.Account)
-	registerCategoryTools(s, deps.Category)
-	registerBudgetTools(s, deps.Budget)
-	registerCreditCardTools(s, deps.CreditCard)
-	registerInvoiceTools(s, deps.Invoice)
-	registerTransferTools(s, deps.Transfer)
-	registerTransactionTools(s, deps.Transaction)
+	registerUserTools(s, r, deps.User)
+	registerAccountTools(s, r, deps.Account)
+	registerCategoryTools(s, r, deps.Category)
+	registerBudgetTools(s, r, deps.Budget)
+	registerCreditCardTools(s, r, deps.CreditCard)
+	registerInvoiceTools(s, r, deps.Invoice)
+	registerTransferTools(s, r, deps.Transfer)
+	registerTransactionTools(s, r, deps.Transaction)
 
 	return s
 }

@@ -25,7 +25,7 @@ func TestBuildServer_AssemblesEveryLayer(t *testing.T) {
 		Transport:   "stdio",
 		HTTPAddr:    ":0",
 	}
-	s, err := buildServer(cfg)
+	s, err := buildServer(context.Background(), cfg, "test")
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestBuildServer_AssemblesEveryLayer_WithLoggingOn(t *testing.T) {
 		HTTPAddr:    ":0",
 		LogRequests: true,
 	}
-	s, err := buildServer(cfg)
+	s, err := buildServer(context.Background(), cfg, "test")
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
