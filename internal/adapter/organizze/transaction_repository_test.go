@@ -119,6 +119,74 @@ func TestTransactionRepository_Create_OmitsRecurrenceWhenNil(t *testing.T) {
 	}
 }
 
+func TestTransactionRepository_Create_IncludesCreditCardFields(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":1}`)
+	})
+	repo := NewTransactionRepository(exec)
+	cardID := int64(1287765)
+	invoiceID := int64(276)
+	_, err := repo.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "Coffee", Date: "2026-05-14", AmountCents: -1500,
+		AccountID: 1, CategoryID: 10,
+		CreditCardID:        &cardID,
+		CreditCardInvoiceID: &invoiceID,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if raw["credit_card_id"] != float64(1287765) {
+		t.Errorf("credit_card_id = %v, want 1287765", raw["credit_card_id"])
+	}
+	if raw["credit_card_invoice_id"] != float64(276) {
+		t.Errorf("credit_card_invoice_id = %v, want 276", raw["credit_card_invoice_id"])
+	}
+}
+
+func TestTransactionRepository_Create_OmitsCreditCardFieldsWhenNil(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":1}`)
+	})
+	repo := NewTransactionRepository(exec)
+	_, err := repo.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "Coffee", Date: "2026-05-14", AmountCents: -1500,
+		AccountID: 1, CategoryID: 10,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for _, k := range []string{"credit_card_id", "credit_card_invoice_id"} {
+		if _, has := raw[k]; has {
+			t.Errorf("%s must be omitted when nil; body=%v", k, raw)
+		}
+	}
+}
+
+func TestTransactionRepository_Update_IncludesCreditCardID(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		_, _ = io.WriteString(w, `{"id":777}`)
+	})
+	repo := NewTransactionRepository(exec)
+	cardID := int64(1287765)
+	_, err := repo.Update(context.Background(), 777, domain.UpdateTransactionParams{
+		CreditCardID: &cardID,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if raw["credit_card_id"] != float64(1287765) {
+		t.Errorf("credit_card_id = %v, want 1287765", raw["credit_card_id"])
+	}
+}
+
 func TestTransactionRepository_Update_SendsOnlySetFields(t *testing.T) {
 	var raw map[string]any
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {

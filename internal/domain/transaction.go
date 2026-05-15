@@ -29,25 +29,28 @@ type Transaction struct {
 	OppositeTransactionID   *int64 `json:"oposite_transaction_id,omitempty"`
 	OppositeAccountID       *int64 `json:"oposite_account_id,omitempty"`
 	RecurrenceID            *int64 `json:"recurrence_id,omitempty"`
-	Tags                    []Tag  `json:"tags,omitempty"`
-	CreatedAt               string `json:"created_at,omitempty"`
+	Tags                    []Tag    `json:"tags,omitempty"`
+	Attachments             []string `json:"attachments,omitempty"`
+	CreatedAt               string   `json:"created_at,omitempty"`
 	UpdatedAt               string `json:"updated_at,omitempty"`
 }
 
 // CreateTransactionParams are the inputs to TransactionService.Create.
 // Shape mirrors the Organizze POST body but is owned by the domain layer.
 type CreateTransactionParams struct {
-	Description  string                  `json:"description"`
-	Date         string                  `json:"date"`
-	AmountCents  int64                   `json:"amount_cents"`
-	AccountID    int64                   `json:"account_id"`
-	CategoryID   int64                   `json:"category_id"`
-	Paid         bool                    `json:"paid"`
-	Notes        string                  `json:"notes,omitempty"`
-	ContactID    *int64                  `json:"contact_id,omitempty"`
-	Tags         []Tag                   `json:"tags,omitempty"`
-	Recurrence   *RecurrenceAttributes   `json:"recurrence_attributes,omitempty"`
-	Installments *InstallmentsAttributes `json:"installments_attributes,omitempty"`
+	Description         string                  `json:"description"`
+	Date                string                  `json:"date"`
+	AmountCents         int64                   `json:"amount_cents"`
+	AccountID           int64                   `json:"account_id"`
+	CategoryID          int64                   `json:"category_id"`
+	Paid                bool                    `json:"paid"`
+	Notes               string                  `json:"notes,omitempty"`
+	ContactID           *int64                  `json:"contact_id,omitempty"`
+	Tags                []Tag                   `json:"tags,omitempty"`
+	CreditCardID        *int64                  `json:"credit_card_id,omitempty"`
+	CreditCardInvoiceID *int64                  `json:"credit_card_invoice_id,omitempty"`
+	Recurrence          *RecurrenceAttributes   `json:"recurrence_attributes,omitempty"`
+	Installments        *InstallmentsAttributes `json:"installments_attributes,omitempty"`
 }
 
 // RecurrenceAttributes turns POST /transactions into a fixed recurring create.
@@ -135,6 +138,7 @@ type UpdateTransactionParams struct {
 	Notes        *string `json:"notes,omitempty"`
 	ContactID    *int64  `json:"contact_id,omitempty"`
 	Tags         []Tag   `json:"tags,omitempty"`
+	CreditCardID *int64  `json:"credit_card_id,omitempty"`
 	UpdateFuture *bool   `json:"update_future,omitempty"`
 	UpdateAll    *bool   `json:"update_all,omitempty"`
 }
