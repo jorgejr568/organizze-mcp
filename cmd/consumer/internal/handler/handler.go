@@ -27,7 +27,20 @@ type Handler struct {
 	Log   *log.Logger
 }
 
-// Handle is the Lambda SQS-trigger entrypoint. Logic lands in Tasks 14–15.
 func (h *Handler) Handle(ctx context.Context, evt events.SQSEvent) (events.SQSEventResponse, error) {
-	return events.SQSEventResponse{}, nil
+	logger := h.Log
+	if logger == nil {
+		logger = log.Default()
+	}
+
+	var failures []events.SQSBatchItemFailure
+	for _, rec := range evt.Records {
+		if err := h.Store.Insert(ctx, rec.MessageId, []byte(rec.Body)); err != nil {
+			logger.Printf("[%s] store insert failed: %v", rec.MessageId, err)
+			failures = append(failures, events.SQSBatchItemFailure{ItemIdentifier: rec.MessageId})
+			continue
+		}
+		logger.Printf("[%s] persisted (%d bytes)", rec.MessageId, len(rec.Body))
+	}
+	return events.SQSEventResponse{BatchItemFailures: failures}, nil
 }
