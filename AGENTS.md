@@ -164,11 +164,11 @@ cmd/consumer (long-running container, idempotent INSERT)
 stats_events (Postgres)
 ```
 
-Each Lambda is an **independent Go module** (`cmd/ingest/go.mod`,
-`cmd/consumer/go.mod`) so the Lambda runtime, AWS SDK v2, and pgx
+Each is an **independent Go module** (`cmd/ingest/go.mod`,
+`cmd/consumer/go.mod`) so the AWS Lambda runtime, AWS SDK v2, and pgx
 dependencies do not pollute the MCP server module. Root-level
-`go test ./...` does **not** descend into either Lambda module; use
-`cd cmd/<name> && make test` or rely on the per-Lambda workflows.
+`go test ./...` does **not** descend into either module; use
+`cd cmd/<name> && make test` or rely on the per-component workflows.
 
 The MCP-side reporter lives in `internal/stats/` (a sibling of
 `internal/{domain,usecase,adapter}`). Tool registrations go through
