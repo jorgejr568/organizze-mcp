@@ -180,7 +180,7 @@ func TestHandle_ConcurrentInserts_RunsUpToLimit(t *testing.T) {
 	// Wait for `limit` workers to have entered Insert before releasing any.
 	// This pins the inflight count to `limit` at observation time without
 	// relying on goroutine scheduling.
-	for i := 0; i < limit; i++ {
+	for range limit {
 		<-entered
 	}
 	mu.Lock()
@@ -191,12 +191,12 @@ func TestHandle_ConcurrentInserts_RunsUpToLimit(t *testing.T) {
 	}
 
 	// Release them all so Process returns and the test can finish cleanly.
-	for i := 0; i < total; i++ {
+	for range total {
 		gate <- struct{}{}
 	}
 	// Drain the remaining entered signals to keep the channel-send in
 	// Insert non-blocking for the 5th worker.
-	for i := limit; i < total; i++ {
+	for range total - limit {
 		<-entered
 	}
 	<-done

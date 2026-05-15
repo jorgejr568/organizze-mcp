@@ -67,10 +67,7 @@ func (h *Handler) Process(ctx context.Context, records []Record) Result {
 		logger = log.Default()
 	}
 
-	limit := h.InsertConcurrency
-	if limit < 1 {
-		limit = 1
-	}
+	limit := max(h.InsertConcurrency, 1)
 
 	var (
 		mu     sync.Mutex
@@ -80,7 +77,6 @@ func (h *Handler) Process(ctx context.Context, records []Record) Result {
 	g.SetLimit(limit)
 
 	for _, rec := range records {
-		rec := rec
 		g.Go(func() error {
 			if err := h.Store.Insert(ctx, rec.MessageID, rec.Body); err != nil {
 				logger.Printf("[%s] store insert failed: %v", rec.MessageID, err)

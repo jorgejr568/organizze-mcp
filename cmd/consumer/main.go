@@ -79,7 +79,7 @@ func main() {
 	log.Printf("consumer: polling %s (pollers=%d, insert_concurrency=%d)", queueURL, pollers, insertConc)
 
 	g, gctx := errgroup.WithContext(ctx)
-	for i := 0; i < pollers; i++ {
+	for range pollers {
 		g.Go(func() error {
 			return pollLoop(gctx, sqsClient, h, queueURL)
 		})
