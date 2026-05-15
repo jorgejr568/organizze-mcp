@@ -246,3 +246,69 @@ func TestTransactionService_Delete_RejectsBothFlags(t *testing.T) {
 		t.Fatalf("err = %v, want ErrValidation", err)
 	}
 }
+
+func TestTransactionService_Update_AccountRouting(t *testing.T) {
+	cardID := int64(386176)
+	accountID := int64(3025678)
+	invoiceID := int64(317)
+
+	t.Run("rejects account_id + credit_card_id (silent-drop trap)", func(t *testing.T) {
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		_, err := svc.Update(context.Background(), 1, domain.UpdateTransactionParams{
+			AccountID:    &accountID,
+			CreditCardID: &cardID,
+		})
+		if !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("err=%v, want ErrValidation", err)
+		}
+	})
+
+	t.Run("rejects credit_card_invoice_id without credit_card_id", func(t *testing.T) {
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		_, err := svc.Update(context.Background(), 1, domain.UpdateTransactionParams{
+			AccountID:           &accountID,
+			CreditCardInvoiceID: &invoiceID,
+		})
+		if !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("err=%v, want ErrValidation", err)
+		}
+	})
+
+	t.Run("accepts credit_card_id alone", func(t *testing.T) {
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Update(context.Background(), 1, domain.UpdateTransactionParams{
+			CreditCardID: &cardID,
+		}); err != nil {
+			t.Errorf("err=%v, want nil", err)
+		}
+	})
+
+	t.Run("accepts credit_card_id + credit_card_invoice_id", func(t *testing.T) {
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Update(context.Background(), 1, domain.UpdateTransactionParams{
+			CreditCardID:        &cardID,
+			CreditCardInvoiceID: &invoiceID,
+		}); err != nil {
+			t.Errorf("err=%v, want nil", err)
+		}
+	})
+
+	t.Run("accepts account_id alone", func(t *testing.T) {
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		if _, err := svc.Update(context.Background(), 1, domain.UpdateTransactionParams{
+			AccountID: &accountID,
+		}); err != nil {
+			t.Errorf("err=%v, want nil", err)
+		}
+	})
+
+	t.Run("accepts neither (partial update of unrelated fields)", func(t *testing.T) {
+		svc := NewTransactionService(&fakeTransactionRepo{})
+		desc := "Tea"
+		if _, err := svc.Update(context.Background(), 1, domain.UpdateTransactionParams{
+			Description: &desc,
+		}); err != nil {
+			t.Errorf("err=%v, want nil", err)
+		}
+	})
+}

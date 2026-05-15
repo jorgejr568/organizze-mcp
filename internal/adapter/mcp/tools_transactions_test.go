@@ -222,3 +222,21 @@ func TestDeleteTransactionHandler(t *testing.T) {
 		t.Errorf("out=%+v svc.deletedID=%d", out, svc.deletedID)
 	}
 }
+
+func TestUpdateTransactionHandler_PlumbsCreditCardInvoiceID(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := updateTransactionHandler(svc)
+	cardID := int64(386176)
+	invoiceID := int64(317)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, UpdateTransactionInput{
+		ID:                  777,
+		CreditCardID:        &cardID,
+		CreditCardInvoiceID: &invoiceID,
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if svc.updated.params.CreditCardInvoiceID == nil || *svc.updated.params.CreditCardInvoiceID != 317 {
+		t.Errorf("params.CreditCardInvoiceID = %v, want 317", svc.updated.params.CreditCardInvoiceID)
+	}
+}

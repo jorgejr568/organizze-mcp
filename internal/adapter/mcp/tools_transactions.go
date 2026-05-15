@@ -73,19 +73,20 @@ type CreateTransactionOutput struct {
 // ---------- update ----------
 
 type UpdateTransactionInput struct {
-	ID           int64        `json:"id" jsonschema:"The numeric transaction id to update."`
-	Description  *string      `json:"description,omitempty"  jsonschema:"New description."`
-	Date         *string      `json:"date,omitempty"         jsonschema:"New date YYYY-MM-DD."`
-	AmountCents  *int64       `json:"amount_cents,omitempty" jsonschema:"New amount in cents."`
-	AccountID    *int64       `json:"account_id,omitempty"   jsonschema:"New account id."`
-	CategoryID   *int64       `json:"category_id,omitempty"  jsonschema:"New category id."`
-	Paid         *bool        `json:"paid,omitempty"         jsonschema:"New paid flag."`
-	Notes        *string      `json:"notes,omitempty"        jsonschema:"New notes."`
-	ContactID    *int64       `json:"contact_id,omitempty"   jsonschema:"New contact id."`
-	Tags         []domain.Tag `json:"tags,omitempty"         jsonschema:"Replacement tag list."`
-	CreditCardID *int64       `json:"credit_card_id,omitempty" jsonschema:"New credit-card id; omit to leave unchanged. Pass an explicit value to move the transaction to a different card."`
-	UpdateFuture *bool        `json:"update_future,omitempty" jsonschema:"For recurring/installment series: also apply this update to the current and all FUTURE occurrences."`
-	UpdateAll    *bool        `json:"update_all,omitempty"    jsonschema:"For recurring/installment series: also apply this update to ALL occurrences, including past ones. May alter the account balance if past entries were already paid."`
+	ID                  int64        `json:"id" jsonschema:"The numeric transaction id to update."`
+	Description         *string      `json:"description,omitempty"  jsonschema:"New description."`
+	Date                *string      `json:"date,omitempty"         jsonschema:"New date YYYY-MM-DD."`
+	AmountCents         *int64       `json:"amount_cents,omitempty" jsonschema:"New amount in cents."`
+	AccountID           *int64       `json:"account_id,omitempty"   jsonschema:"New bank account id. MUST NOT be combined with credit_card_id — Organizze silently drops credit_card_id (and credit_card_invoice_id) when account_id is also present in the PUT body. To move a transaction to a credit card, send only credit_card_id."`
+	CategoryID          *int64       `json:"category_id,omitempty"  jsonschema:"New category id."`
+	Paid                *bool        `json:"paid,omitempty"         jsonschema:"New paid flag."`
+	Notes               *string      `json:"notes,omitempty"        jsonschema:"New notes."`
+	ContactID           *int64       `json:"contact_id,omitempty"   jsonschema:"New contact id."`
+	Tags                []domain.Tag `json:"tags,omitempty"         jsonschema:"Replacement tag list."`
+	CreditCardID        *int64       `json:"credit_card_id,omitempty"         jsonschema:"Move this transaction to a credit card by ID. MUST NOT be combined with account_id (Organizze silently ignores credit_card_id when account_id is present)."`
+	CreditCardInvoiceID *int64       `json:"credit_card_invoice_id,omitempty" jsonschema:"Pin this transaction to a specific credit-card invoice. Requires credit_card_id; omit to let Organizze auto-pick the current invoice."`
+	UpdateFuture        *bool        `json:"update_future,omitempty" jsonschema:"For recurring/installment series: also apply this update to the current and all FUTURE occurrences."`
+	UpdateAll           *bool        `json:"update_all,omitempty"    jsonschema:"For recurring/installment series: also apply this update to ALL occurrences, including past ones. May alter the account balance if past entries were already paid."`
 }
 
 type UpdateTransactionOutput struct {
@@ -164,8 +165,10 @@ func updateTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Upda
 			Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
 			AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
 			Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
-			CreditCardID: in.CreditCardID,
-			UpdateFuture: in.UpdateFuture, UpdateAll: in.UpdateAll,
+			CreditCardID:        in.CreditCardID,
+			CreditCardInvoiceID: in.CreditCardInvoiceID,
+			UpdateFuture:        in.UpdateFuture,
+			UpdateAll:           in.UpdateAll,
 		})
 		if err != nil {
 			return nil, UpdateTransactionOutput{}, err
@@ -204,8 +207,10 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 			"`recurrence` and `installments` are mutually exclusive.",
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "update_transaction",
-		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged. For recurring (fixa) or installment (parcelada) series, set update_future=true to propagate the change to this and all future occurrences, or update_all=true to propagate to every occurrence (may alter past-paid balances).",
+		Name: "update_transaction",
+		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged. " +
+			"Account routing: to keep the transaction on the same bearer, omit both account_id and credit_card_id. To move it to a different bank account, set only account_id. To move it to a credit card, set only credit_card_id (optionally pinned to a specific invoice via credit_card_invoice_id; omit invoice to let Organizze auto-pick). account_id and credit_card_id are mutually exclusive — if both are sent, Organizze silently drops credit_card_id (and credit_card_invoice_id) and the transaction stays on / moves to the bank account. " +
+			"For recurring (fixa) or installment (parcelada) series, set update_future=true to propagate the change to this and all future occurrences, or update_all=true to propagate to every occurrence (may alter past-paid balances).",
 	}, updateTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "delete_transaction",
