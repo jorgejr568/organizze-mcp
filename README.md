@@ -134,6 +134,19 @@ make build       # binary at bin/organizze-mcp
 make docker      # container image
 ```
 
+### Debugging
+
+Set `ORGANIZZE_LOG_REQUESTS=1` to print every outbound Organizze API call to stderr. Each request emits one line and each response emits another:
+
+```
+organizze: --> POST /transactions body={"description":"Coffee","amount_cents":-1500,...}
+organizze: <-- POST /transactions status=201 body={"id":99,...}
+```
+
+The Authorization header is never logged. Response bodies are truncated at 2KB to keep the output readable. Off by default; when off, the logging path is a single boolean test with no allocations.
+
+Use this when the API's behaviour disagrees with what you sent — Organizze silently drops some fields (see `AGENTS.md` "Known Organizze API gotchas") and the only way to see the discrepancy is to compare what went out against what came back.
+
 ## Adoption & forks
 
 This project is intentionally low-friction to adopt:
