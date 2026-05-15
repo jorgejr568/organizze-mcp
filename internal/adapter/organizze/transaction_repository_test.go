@@ -305,3 +305,48 @@ func TestTransactionRepository_Delete_NoFlags_SendsNoBody(t *testing.T) {
 		t.Errorf("body = %q on empty params, want empty", string(gotBody))
 	}
 }
+
+func TestTransactionRepository_Update_IncludesCreditCardInvoiceID(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		_, _ = io.WriteString(w, `{"id":777}`)
+	})
+	repo := NewTransactionRepository(exec)
+	cardID := int64(386176)
+	invoiceID := int64(317)
+	_, err := repo.Update(context.Background(), 777, domain.UpdateTransactionParams{
+		CreditCardID:        &cardID,
+		CreditCardInvoiceID: &invoiceID,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if raw["credit_card_id"] != float64(386176) {
+		t.Errorf("credit_card_id = %v, want 386176", raw["credit_card_id"])
+	}
+	if raw["credit_card_invoice_id"] != float64(317) {
+		t.Errorf("credit_card_invoice_id = %v, want 317", raw["credit_card_invoice_id"])
+	}
+}
+
+func TestTransactionRepository_Update_OmitsAccountIDAndCreditCardInvoiceIDWhenNil(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		_, _ = io.WriteString(w, `{"id":777}`)
+	})
+	repo := NewTransactionRepository(exec)
+	cardID := int64(386176)
+	_, err := repo.Update(context.Background(), 777, domain.UpdateTransactionParams{
+		CreditCardID: &cardID,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	for _, k := range []string{"account_id", "credit_card_invoice_id"} {
+		if _, has := raw[k]; has {
+			t.Errorf("%s must be omitted when nil; body=%v", k, raw)
+		}
+	}
+}

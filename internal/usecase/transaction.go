@@ -52,6 +52,9 @@ func (s *TransactionService) Create(ctx context.Context, p domain.CreateTransact
 }
 
 func (s *TransactionService) Update(ctx context.Context, id int64, p domain.UpdateTransactionParams) (*domain.Transaction, error) {
+	if err := validateUpdate(p); err != nil {
+		return nil, err
+	}
 	return s.repo.Update(ctx, id, p)
 }
 
@@ -97,6 +100,23 @@ func validateCreate(p domain.CreateTransactionParams) error {
 		if p.Installments.Total <= 0 {
 			return fmt.Errorf("%w: installments.total must be > 0", domain.ErrValidation)
 		}
+	}
+	return nil
+}
+
+// validateUpdate enforces the account-routing rules on PUT /transactions/{id}.
+// Organizze silently drops credit_card_id (and credit_card_invoice_id) when
+// account_id is also present in the request body — the same trap closed for
+// POST in v0.6.1, verified to also apply to PUT in the v0.6.2 audit.
+//
+// Unlike validateCreate, both AccountID and CreditCardID may be nil (a partial
+// update that touches neither field), so the "neither set" branch is allowed.
+func validateUpdate(p domain.UpdateTransactionParams) error {
+	switch {
+	case p.AccountID != nil && p.CreditCardID != nil:
+		return fmt.Errorf("%w: account_id and credit_card_id are mutually exclusive on update — Organizze silently drops credit_card_id when account_id is also set. To move a transaction to a credit card, pass only credit_card_id (optionally with credit_card_invoice_id)", domain.ErrValidation)
+	case p.CreditCardInvoiceID != nil && p.CreditCardID == nil:
+		return fmt.Errorf("%w: credit_card_invoice_id requires credit_card_id on update", domain.ErrValidation)
 	}
 	return nil
 }

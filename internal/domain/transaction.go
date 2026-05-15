@@ -129,16 +129,17 @@ func (p DeleteTransactionParams) IsZero() bool {
 }
 
 type UpdateTransactionParams struct {
-	Description  *string `json:"description,omitempty"`
-	Date         *string `json:"date,omitempty"`
-	AmountCents  *int64  `json:"amount_cents,omitempty"`
-	AccountID    *int64  `json:"account_id,omitempty"`
-	CategoryID   *int64  `json:"category_id,omitempty"`
-	Paid         *bool   `json:"paid,omitempty"`
-	Notes        *string `json:"notes,omitempty"`
-	ContactID    *int64  `json:"contact_id,omitempty"`
-	Tags         []Tag   `json:"tags,omitempty"`
-	CreditCardID *int64  `json:"credit_card_id,omitempty"`
-	UpdateFuture *bool   `json:"update_future,omitempty"`
-	UpdateAll    *bool   `json:"update_all,omitempty"`
+	Description         *string `json:"description,omitempty"`
+	Date                *string `json:"date,omitempty"`
+	AmountCents         *int64  `json:"amount_cents,omitempty"`
+	AccountID           *int64  `json:"account_id,omitempty"`
+	CategoryID          *int64  `json:"category_id,omitempty"`
+	Paid                *bool   `json:"paid,omitempty"`
+	Notes               *string `json:"notes,omitempty"`
+	ContactID           *int64  `json:"contact_id,omitempty"`
+	Tags                []Tag   `json:"tags,omitempty"`
+	CreditCardID        *int64  `json:"credit_card_id,omitempty"`
+	CreditCardInvoiceID *int64  `json:"credit_card_invoice_id,omitempty"`
+	UpdateFuture        *bool   `json:"update_future,omitempty"`
+	UpdateAll           *bool   `json:"update_all,omitempty"`
 }
