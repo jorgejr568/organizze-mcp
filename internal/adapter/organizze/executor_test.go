@@ -1,11 +1,13 @@
 package organizze
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -197,5 +199,36 @@ func TestExecutor_PropagatesContextCancel(t *testing.T) {
 	cancel()
 	if err := exec.Get(ctx, "/slow", nil); err == nil {
 		t.Fatal("expected error from cancelled ctx")
+	}
+}
+
+func TestExecutor_LoggingDisabled_WritesNothing(t *testing.T) {
+	var buf bytes.Buffer
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(ts.Close)
+
+	exec, err := NewRequestExecutor(RequestExecutorOptions{
+		HTTPClient:  NewClient(ClientOptions{}),
+		BaseURL:     ts.URL,
+		Email:       "test@example.com",
+		APIKey:      "test-key",
+		UserAgent:   "Test (test@example.com)",
+		LogRequests: false,
+		LogWriter:   &buf,
+	})
+	if err != nil {
+		t.Fatalf("NewRequestExecutor: %v", err)
+	}
+
+	var out struct {
+		OK bool `json:"ok"`
+	}
+	if err := exec.Get(context.Background(), "/users/3", &out); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("LogWriter received %d bytes with LogRequests=false: %q", buf.Len(), buf.String())
 	}
 }
