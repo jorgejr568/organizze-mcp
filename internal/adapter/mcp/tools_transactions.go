@@ -6,6 +6,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
+	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 // TransactionService is the consumer-side slice this file needs.
@@ -189,16 +190,16 @@ func deleteTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Dele
 	}
 }
 
-func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+func registerTransactionTools(s *mcpsdk.Server, r stats.Reporter, svc TransactionService) {
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "list_transactions",
 		Description: "List Organizze transactions. Filters: start_date, end_date (YYYY-MM-DD), account_id. amount_cents is negative for expenses, positive for income.",
 	}, listTransactionsHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "get_transaction",
 		Description: "Fetch a single Organizze transaction by id.",
 	}, getTransactionHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name: "create_transaction",
 		Description: "Create a new Organizze transaction. amount_cents is in cents (negative for expenses, positive for income). " +
 			"Account routing: for a BANK transaction set `account_id`; for a CREDIT-CARD transaction set `credit_card_id` (optionally pinned to a specific invoice via `credit_card_invoice_id`). Exactly one of `account_id` or `credit_card_id` must be set — if both are sent, Organizze silently drops `credit_card_id` and the transaction lands on the bank account. " +
@@ -206,13 +207,13 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 			"For a parcelada (installment) transaction, pass `installments` with `periodicity` and `total`; IMPORTANT: when `installments` is set, Organizze treats `amount_cents` as the TOTAL across all installments and divides evenly, so each generated installment will be amount_cents/total. To get per-installment value X with N installments, send amount_cents = X * N. " +
 			"`recurrence` and `installments` are mutually exclusive.",
 	}, createTransactionHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name: "update_transaction",
 		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged. " +
 			"Account routing: to keep the transaction on the same bearer, omit both account_id and credit_card_id. To move it to a different bank account, set only account_id. To move it to a credit card, set only credit_card_id (optionally pinned to a specific invoice via credit_card_invoice_id; omit invoice to let Organizze auto-pick). account_id and credit_card_id are mutually exclusive — if both are sent, Organizze silently drops credit_card_id (and credit_card_invoice_id) and the transaction stays on / moves to the bank account. " +
 			"For recurring (fixa) or installment (parcelada) series, set update_future=true to propagate the change to this and all future occurrences, or update_all=true to propagate to every occurrence (may alter past-paid balances).",
 	}, updateTransactionHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "delete_transaction",
 		Description: "Permanently delete an Organizze transaction by id. For recurring (fixa) or installment (parcelada) series, set update_future=true to also delete this and all future occurrences, or update_all=true to delete every occurrence (may alter past-paid balances). The two flags are mutually exclusive.",
 	}, deleteTransactionHandler(svc))

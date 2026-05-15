@@ -6,6 +6,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
+	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 type TransferService interface {
@@ -122,24 +123,24 @@ func deleteTransferHandler(svc TransferService) mcpsdk.ToolHandlerFor[DeleteTran
 	}
 }
 
-func registerTransferTools(s *mcpsdk.Server, svc TransferService) {
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+func registerTransferTools(s *mcpsdk.Server, r stats.Reporter, svc TransferService) {
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "list_transfers",
 		Description: "List Organizze transfers, optionally filtered by date range.",
 	}, listTransfersHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "get_transfer",
 		Description: "Fetch a single Organizze transfer by id.",
 	}, getTransferHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "create_transfer",
 		Description: "Create a new Organizze transfer between two bank accounts. Required: credit_account_id (receiving), debit_account_id (sending), amount_cents, date. Credit cards are NOT accepted as source or destination.",
 	}, createTransferHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "update_transfer",
 		Description: "Update fields on an existing Organizze transfer. Only description, notes, and tags can be modified.",
 	}, updateTransferHandler(svc))
-	mcpsdk.AddTool(s, &mcpsdk.Tool{
+	addInstrumentedTool(s, r, &mcpsdk.Tool{
 		Name:        "delete_transfer",
 		Description: "Permanently delete an Organizze transfer by id.",
 	}, deleteTransferHandler(svc))
