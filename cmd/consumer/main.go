@@ -30,6 +30,7 @@ const (
 	receiveBatchSize   = 10 // SQS max
 	receiveWaitSeconds = 20 // long-poll
 	pingTimeout        = 5 * time.Second
+	ackTimeout         = 5 * time.Second // grace period for the Delete phase after SIGTERM
 )
 
 func main() {
@@ -107,17 +108,26 @@ func pollLoop(ctx context.Context, sqsClient *sqs.Client, h *handler.Handler, qu
 		for _, id := range res.FailedMessageIDs {
 			failed[id] = struct{}{}
 		}
+
+		// Use a fresh, short-deadlined context for the Delete phase so
+		// successful persists still get acked when the parent ctx fires
+		// (SIGTERM mid-batch). Without this, every Delete would fail with
+		// context.Canceled, the rows would stay in the queue, and the
+		// next start-up would see them redelivered — safe due to ON
+		// CONFLICT DO NOTHING, but noisy and avoidable.
+		ackCtx, ackCancel := context.WithTimeout(context.WithoutCancel(ctx), ackTimeout)
 		for _, m := range out.Messages {
 			if _, bad := failed[aws.ToString(m.MessageId)]; bad {
 				continue // leave for redelivery
 			}
-			if _, err := sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+			if _, err := sqsClient.DeleteMessage(ackCtx, &sqs.DeleteMessageInput{
 				QueueUrl:      aws.String(queueURL),
 				ReceiptHandle: m.ReceiptHandle,
 			}); err != nil {
 				log.Printf("[%s] delete failed: %v", aws.ToString(m.MessageId), err)
 			}
 		}
+		ackCancel()
 	}
 }
 

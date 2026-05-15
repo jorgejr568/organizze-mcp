@@ -63,10 +63,9 @@ container must have:
 
 - Network reach to the SQS queue (`STATS_QUEUE_URL`).
 - Network reach to Postgres (`STATS_DATABASE_URL`).
-- AWS credentials with `sqs:ReceiveMessage`, `sqs:DeleteMessage`,
-  `sqs:GetQueueAttributes` on the queue ARN — supplied via an IAM role on
-  the host (preferred) or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-  env vars.
+- AWS credentials with `sqs:ReceiveMessage` and `sqs:DeleteMessage` on the
+  queue ARN — supplied via an IAM role on the host (preferred) or
+  `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` env vars.
 
 Minimal example with environment variables:
 
