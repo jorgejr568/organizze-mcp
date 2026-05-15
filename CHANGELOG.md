@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Release workflow now creates the GitHub release automatically when a `v*` tag is pushed. The new `release` job in `.github/workflows/release.yml` extracts the CHANGELOG section for the tag, appends a `## Docker` pull block and a `compare/vPREV...vNEW` URL, and publishes via `softprops/action-gh-release@v2`. Eliminates the final manual step (`gh release create …`) from the release flow documented in `AGENTS.md`. Fails the workflow if the CHANGELOG does not already contain a section for the pushed tag — keeps the "CHANGELOG-bump PR before tag" ordering load-bearing.
+
 ## [0.6.2] - 2026-05-15
 
 ### Fixed
