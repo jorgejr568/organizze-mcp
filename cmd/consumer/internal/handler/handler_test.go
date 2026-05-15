@@ -114,4 +114,3 @@ func TestHandle_PartialFailure_ReportsOnlyFailedMessages(t *testing.T) {
 
 // Sentinel: fakeStore satisfies the interface at compile time.
 var _ StatsStore = (*fakeStore)(nil)
-var _ = errors.New // referenced in later tests
