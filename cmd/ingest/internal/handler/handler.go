@@ -5,6 +5,7 @@ package handler
 
 import (
 	"context"
+	"crypto/subtle"
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -27,7 +28,26 @@ type Handler struct {
 }
 
 // Handle is the Lambda Function URL entrypoint (payload format v2.0).
-// Filled in across Tasks 4–7.
 func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
-	return events.LambdaFunctionURLResponse{StatusCode: 500}, nil
+	logger := h.Log
+	if logger == nil {
+		logger = log.Default()
+	}
+	prefix := "[" + req.RequestContext.RequestID + "] "
+
+	provided := req.Headers["x-ingest-token"]
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(h.Secret)) != 1 {
+		logger.Print(prefix + "auth: rejected request (token mismatch or missing)")
+		return jsonResponse(401, `{"error":"unauthorized"}`), nil
+	}
+
+	return jsonResponse(500, `{"error":"not implemented"}`), nil
+}
+
+func jsonResponse(status int, body string) events.LambdaFunctionURLResponse {
+	return events.LambdaFunctionURLResponse{
+		StatusCode: status,
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       body,
+	}
 }
