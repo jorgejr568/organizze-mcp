@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-15
+
 ### Added
 - **Verbose request logging.** Set `ORGANIZZE_LOG_REQUESTS=1` to make the Organizze HTTP executor emit one stderr line per outbound request (method, path, JSON body) and one per response (status code, body truncated to 2KB). Off by default; cost when disabled is a single boolean test. The Authorization header is never written to the log — a redaction test guards this. Intended for diagnosing the silent-drop class of bugs documented in `AGENTS.md` (e.g. `account_id` + `credit_card_id` mutual-exclusion, `replacement_id` as query param vs body).
 
