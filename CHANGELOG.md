@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-15
+
 ### Added
 - `create_transaction` and `update_transaction` now accept `credit_card_id`; `create_transaction` additionally accepts `credit_card_invoice_id`. Closes the gap with `openapi.yaml`'s `TransactionInput` / `UpdateTransaction` schemas — clients can create or move transactions on a specific credit card / invoice.
 - `Transaction` response now includes `attachments []string`, mirroring `openapi.yaml`'s `Transaction.attachments`.
