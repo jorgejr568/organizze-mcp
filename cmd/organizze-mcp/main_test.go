@@ -34,6 +34,26 @@ func TestBuildServer_AssemblesEveryLayer(t *testing.T) {
 	}
 }
 
+func TestBuildServer_AssemblesEveryLayer_WithLoggingOn(t *testing.T) {
+	cfg := &config.Config{
+		APIKey:      "k",
+		Email:       "e@x.com",
+		UserAgent:   "Test (e@x.com)",
+		BaseURL:     "http://127.0.0.1:1",
+		HTTPTimeout: 5 * time.Second,
+		Transport:   "stdio",
+		HTTPAddr:    ":0",
+		LogRequests: true,
+	}
+	s, err := buildServer(cfg)
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
+	if s == nil {
+		t.Fatal("server is nil")
+	}
+}
+
 func TestRunWithTransport_ServesOverInMemory(t *testing.T) {
 	cfg := &config.Config{
 		APIKey: "k", Email: "e@x.com", UserAgent: "Test (e@x.com)",
