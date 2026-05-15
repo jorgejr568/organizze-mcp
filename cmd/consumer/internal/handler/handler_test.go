@@ -80,6 +80,38 @@ func TestHandle_SingleRecord_PersistsAndReportsNoFailures(t *testing.T) {
 	}
 }
 
+func TestHandle_PartialFailure_ReportsOnlyFailedMessages(t *testing.T) {
+	storeErr := errors.New("connection refused")
+	store := &fakeStore{
+		errByMsg: map[string]error{"msg-bad": storeErr},
+	}
+	h := newHandler(t, store)
+
+	resp, err := h.Handle(context.Background(), events.SQSEvent{
+		Records: []events.SQSMessage{
+			sqsRec("msg-1", `{"a":1}`),
+			sqsRec("msg-bad", `{"b":2}`),
+			sqsRec("msg-3", `{"c":3}`),
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.BatchItemFailures) != 1 {
+		t.Fatalf("expected 1 failure, got %d (%v)", len(resp.BatchItemFailures), resp.BatchItemFailures)
+	}
+	if got := resp.BatchItemFailures[0].ItemIdentifier; got != "msg-bad" {
+		t.Fatalf("failure ItemIdentifier: got %q want msg-bad", got)
+	}
+
+	// The handler must NOT short-circuit on a record failure — every record
+	// in the batch should have been attempted.
+	if len(store.calls) != 3 {
+		t.Fatalf("expected 3 store attempts, got %d", len(store.calls))
+	}
+}
+
 // Sentinel: fakeStore satisfies the interface at compile time.
 var _ StatsStore = (*fakeStore)(nil)
 var _ = errors.New // referenced in later tests
