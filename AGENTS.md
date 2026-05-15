@@ -148,6 +148,53 @@ gh pr view N --json mergeStateStatus,statusCheckRollup        # PR readiness
 gh run list --workflow=release.yml --limit 1                  # release-time Docker workflow status
 ```
 
+## Stats Pipeline (`cmd/ingest/` + `cmd/consumer/` + `internal/stats/`)
+
+Three components form the stats ingestion pipeline:
+
+```
+MCP server (internal/stats HTTPReporter, fire-and-forget)
+   ↓ HTTPS POST with X-Ingest-Token
+cmd/ingest (Function URL, shared-secret auth)
+   ↓ SQS SendMessage (raw body)
+SQS queue
+   ↓ event source mapping with ReportBatchItemFailures
+cmd/consumer (SQS trigger, idempotent INSERT)
+   ↓ INSERT ... ON CONFLICT DO NOTHING
+stats_events (Postgres)
+```
+
+Each Lambda is an **independent Go module** (`cmd/ingest/go.mod`,
+`cmd/consumer/go.mod`) so the Lambda runtime, AWS SDK v2, and pgx
+dependencies do not pollute the MCP server module. Root-level
+`go test ./...` does **not** descend into either Lambda module; use
+`cd cmd/<name> && make test` or rely on the per-Lambda workflows.
+
+The MCP-side reporter lives in `internal/stats/` (a sibling of
+`internal/{domain,usecase,adapter}`). Tool registrations go through
+`addInstrumentedTool` in `internal/adapter/mcp/instrument.go`, which
+times the call, classifies the error via a small fixed vocabulary,
+and hands a populated `Event` to the reporter on the return path.
+
+- **Function names:** `organizze-mcp-stats-ingest`, `organizze-mcp-stats-consumer` (both `provided.al2023`, `arm64`, `us-east-1`).
+- **Infra owner:** both functions, the SQS queue, the event source mapping, the Secrets Manager secret for the ingest token, and the Postgres connectivity are Terraform-provisioned in a separate repo. Do not change function name, runtime, memory, timeout, queue ARN, or DB DSN from here.
+- **Lambda deploys:** push to `main` touching `cmd/<name>/**` triggers `.github/workflows/<name>.yml` using:
+  - `secrets.INGESTION_DEPLOY_AWS_ACCESS_KEY_ID`
+  - `secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY`
+  - `vars.INGESTION_DEPLOY_AWS_REGION` (**variable, not secret**)
+- **MCP-side build-time defaults** (officially-released Docker images only):
+  - `vars.INGESTION_DEPLOY_URL` — Function URL of the ingest Lambda
+  - `secrets.INGESTION_DEPLOY_TOKEN` — must match the live Secrets Manager value the ingest function fetches at cold start; rotate both together
+- **MCP runtime overrides / opt-out:** `MCP_STATS_OPTOUT=1` disables stats entirely; `MCP_STATS_INGEST_URL` / `MCP_STATS_INGEST_TOKEN` override the build-time defaults.
+- **Lambda runtime env vars:**
+  - Ingest: `STATS_QUEUE_URL` (Terraform-injected), `INGEST_SHARED_SECRET_ARN` (Secrets Manager ARN — `cmd/ingest/main.go` calls `secretsmanager:GetSecretValue` at cold start; rotate the secret value via `aws secretsmanager update-secret` and update `secrets.INGESTION_DEPLOY_TOKEN` in lockstep).
+  - Consumer: `STATS_DATABASE_URL` (Terraform-injected libpq URI).
+- **Database schema:** `cmd/consumer/migrations/001_init.sql` is the source of truth. Apply out-of-band via `cd cmd/consumer && make migrate-up` before schema-affecting changes.
+- **Idempotency:** consumer uses `INSERT ... ON CONFLICT (message_id) DO NOTHING`, so SQS at-least-once redelivery is a safe no-op.
+- **Non-sensitivity invariant:** the MCP `Event` must contain only non-sensitive fields (tool name, status, error_class from a fixed vocabulary, timing, version, transport). No tool arguments, no return values, no account IDs, no free-text error messages. New fields require explicit review against this rule.
+
+See `cmd/ingest/README.md`, `cmd/consumer/README.md`, and `internal/stats/` for details.
+
 ## When in doubt
 
 Read the closest existing test before writing a new one — the patterns are tight and consistent, and reusing them is faster than reinventing. Read `openapi.yaml` before adding wire fields — it's the source of truth, and gaps against it are what motivate most of the change history.

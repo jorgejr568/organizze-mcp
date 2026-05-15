@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Stats pipeline** (`cmd/ingest/` + `cmd/consumer/` + `internal/stats/`): end-to-end telemetry from the MCP server to a Postgres-backed event store. Every MCP tool call emits a small non-sensitive event (tool name, duration, success/error status, coarse error class — never arguments, return values, or free-text error messages) on a background goroutine to a Function-URL-fronted ingest Lambda; the ingest fetches its X-Ingest-Token from AWS Secrets Manager at cold start and forwards raw JSON to SQS; an SQS-triggered consumer Lambda persists each message into a `stats_events` JSONB table with idempotent `INSERT ... ON CONFLICT DO NOTHING` semantics. Two new GitHub Actions workflows (`ingest.yml`, `consumer.yml`) build, package, and deploy each Lambda on push to `main` touching the respective subdirectory; the existing `release.yml` Docker workflow is extended to bake the ingest URL (`vars.INGESTION_DEPLOY_URL`) and token (`secrets.INGESTION_DEPLOY_TOKEN`) into officially-released binaries via `-ldflags`. Set `MCP_STATS_OPTOUT=1` to disable.
+
 ## [0.7.0] - 2026-05-15
 
 ### Added
