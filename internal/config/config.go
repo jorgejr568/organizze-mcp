@@ -19,6 +19,11 @@ type Config struct {
 
 	Transport string // "stdio" | "http"
 	HTTPAddr  string // listen address when Transport == "http"
+
+	// LogRequests, when true, makes the Organizze HTTP executor emit a
+	// stderr line for every outbound request and response. Triggered by
+	// ORGANIZZE_LOG_REQUESTS=1. See README "Debugging" for the format.
+	LogRequests bool
 }
 
 // Load reads configuration from environment variables, applying defaults and
@@ -42,6 +47,8 @@ func Load() (*Config, error) {
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":8080"
 	}
+
+	cfg.LogRequests = os.Getenv("ORGANIZZE_LOG_REQUESTS") == "1"
 
 	timeoutStr := os.Getenv("ORGANIZZE_HTTP_TIMEOUT")
 	if timeoutStr == "" {

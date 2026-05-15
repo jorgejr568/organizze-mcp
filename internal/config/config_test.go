@@ -88,3 +88,48 @@ func TestLoad_RejectsInvalidTimeout(t *testing.T) {
 		t.Fatalf("want timeout error, got %v", err)
 	}
 }
+
+func TestLoad_LogRequests_DefaultsOff(t *testing.T) {
+	t.Setenv("ORGANIZZE_API_KEY", "k")
+	t.Setenv("ORGANIZZE_EMAIL", "e@x.com")
+	t.Setenv("ORGANIZZE_USER_AGENT", "ua")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LogRequests {
+		t.Errorf("LogRequests = true, want false when env var is unset")
+	}
+}
+
+func TestLoad_LogRequests_OnWhenSetToOne(t *testing.T) {
+	t.Setenv("ORGANIZZE_API_KEY", "k")
+	t.Setenv("ORGANIZZE_EMAIL", "e@x.com")
+	t.Setenv("ORGANIZZE_USER_AGENT", "ua")
+	t.Setenv("ORGANIZZE_LOG_REQUESTS", "1")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.LogRequests {
+		t.Errorf("LogRequests = false, want true when ORGANIZZE_LOG_REQUESTS=1")
+	}
+}
+
+func TestLoad_LogRequests_OffForNonOneValues(t *testing.T) {
+	t.Setenv("ORGANIZZE_API_KEY", "k")
+	t.Setenv("ORGANIZZE_EMAIL", "e@x.com")
+	t.Setenv("ORGANIZZE_USER_AGENT", "ua")
+	for _, v := range []string{"true", "yes", "0", "false", "on", ""} {
+		t.Setenv("ORGANIZZE_LOG_REQUESTS", v)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load(%q): %v", v, err)
+		}
+		if cfg.LogRequests {
+			t.Errorf("LogRequests = true for ORGANIZZE_LOG_REQUESTS=%q, want false", v)
+		}
+	}
+}
