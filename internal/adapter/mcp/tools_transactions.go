@@ -43,14 +43,14 @@ type CreateTransactionInput struct {
 	Description         string             `json:"description" jsonschema:"Short transaction description."`
 	Date                string             `json:"date"        jsonschema:"YYYY-MM-DD."`
 	AmountCents         int64              `json:"amount_cents" jsonschema:"Cents; negative=expense, positive=income. When installments is set, this is the TOTAL across all installments — Organizze divides evenly. To get a per-installment value X with N installments, send amount_cents = X * N."`
-	AccountID           int64              `json:"account_id"   jsonschema:"Source account id."`
+	AccountID           int64              `json:"account_id,omitempty" jsonschema:"Bank account id. Required for a bank-account transaction; MUST be omitted when billing to a credit card. account_id and credit_card_id are mutually exclusive — Organizze silently drops credit_card_id when account_id is also set."`
 	CategoryID          int64              `json:"category_id"  jsonschema:"Category id."`
 	Paid                bool               `json:"paid"         jsonschema:"Whether the transaction is already paid."`
 	Notes               string             `json:"notes,omitempty"      jsonschema:"Optional notes."`
 	ContactID           *int64             `json:"contact_id,omitempty" jsonschema:"Optional contact id."`
 	Tags                []domain.Tag       `json:"tags,omitempty"       jsonschema:"Optional tags."`
-	CreditCardID        *int64             `json:"credit_card_id,omitempty"         jsonschema:"Optional. Bill this transaction to a credit card by ID. Often paired with credit_card_invoice_id to target a specific invoice."`
-	CreditCardInvoiceID *int64             `json:"credit_card_invoice_id,omitempty" jsonschema:"Optional. Pin this transaction to a specific credit-card invoice. Only meaningful together with credit_card_id."`
+	CreditCardID        *int64             `json:"credit_card_id,omitempty"         jsonschema:"Bill this transaction to a credit card by ID. Required for credit-card transactions; MUST NOT be combined with account_id (Organizze silently ignores credit_card_id when account_id is present)."`
+	CreditCardInvoiceID *int64             `json:"credit_card_invoice_id,omitempty" jsonschema:"Pin this transaction to a specific credit-card invoice. Requires credit_card_id; omit to let Organizze auto-pick the current invoice."`
 	Recurrence          *RecurrenceInput   `json:"recurrence,omitempty"   jsonschema:"Optional. Set to create a fixed recurring transaction (recurrence_attributes). Mutually exclusive with installments."`
 	Installments        *InstallmentsInput `json:"installments,omitempty" jsonschema:"Optional. Set to create an installment-plan transaction (installments_attributes). Mutually exclusive with recurrence."`
 }
@@ -198,10 +198,10 @@ func registerTransactionTools(s *mcpsdk.Server, svc TransactionService) {
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name: "create_transaction",
 		Description: "Create a new Organizze transaction. amount_cents is in cents (negative for expenses, positive for income). " +
+			"Account routing: for a BANK transaction set `account_id`; for a CREDIT-CARD transaction set `credit_card_id` (optionally pinned to a specific invoice via `credit_card_invoice_id`). Exactly one of `account_id` or `credit_card_id` must be set — if both are sent, Organizze silently drops `credit_card_id` and the transaction lands on the bank account. " +
 			"For a fixed recurring transaction, pass `recurrence` with a `periodicity` (weekly, biweekly, monthly, bimonthly, trimonthly, yearly). " +
 			"For a parcelada (installment) transaction, pass `installments` with `periodicity` and `total`; IMPORTANT: when `installments` is set, Organizze treats `amount_cents` as the TOTAL across all installments and divides evenly, so each generated installment will be amount_cents/total. To get per-installment value X with N installments, send amount_cents = X * N. " +
-			"`recurrence` and `installments` are mutually exclusive. " +
-			"Bill to a credit card by setting `credit_card_id` (optionally pinned to an invoice via `credit_card_invoice_id`).",
+			"`recurrence` and `installments` are mutually exclusive.",
 	}, createTransactionHandler(svc))
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "update_transaction",

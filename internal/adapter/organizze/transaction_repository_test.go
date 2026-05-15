@@ -187,6 +187,31 @@ func TestTransactionRepository_Update_IncludesCreditCardID(t *testing.T) {
 	}
 }
 
+func TestTransactionRepository_Create_OmitsAccountIDWhenZero(t *testing.T) {
+	var raw map[string]any
+	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":1}`)
+	})
+	repo := NewTransactionRepository(exec)
+	cardID := int64(386176)
+	_, err := repo.Create(context.Background(), domain.CreateTransactionParams{
+		Description: "Card buy", Date: "2026-05-14", AmountCents: -1500,
+		CategoryID:   10,
+		CreditCardID: &cardID,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, has := raw["account_id"]; has {
+		t.Errorf("account_id must be absent from body when zero (so Organizze does not drop credit_card_id); body=%v", raw)
+	}
+	if raw["credit_card_id"] != float64(386176) {
+		t.Errorf("credit_card_id = %v, want 386176", raw["credit_card_id"])
+	}
+}
+
 func TestTransactionRepository_Update_SendsOnlySetFields(t *testing.T) {
 	var raw map[string]any
 	exec, _ := newTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {

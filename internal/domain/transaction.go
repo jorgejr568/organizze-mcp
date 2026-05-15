@@ -41,7 +41,7 @@ type CreateTransactionParams struct {
 	Description         string                  `json:"description"`
 	Date                string                  `json:"date"`
 	AmountCents         int64                   `json:"amount_cents"`
-	AccountID           int64                   `json:"account_id"`
+	AccountID           int64                   `json:"account_id,omitempty"`
 	CategoryID          int64                   `json:"category_id"`
 	Paid                bool                    `json:"paid"`
 	Notes               string                  `json:"notes,omitempty"`

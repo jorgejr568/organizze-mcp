@@ -70,10 +70,19 @@ func validateCreate(p domain.CreateTransactionParams) error {
 		return fmt.Errorf("%w: date is required", domain.ErrValidation)
 	case p.AmountCents == 0:
 		return fmt.Errorf("%w: amount_cents must be non-zero", domain.ErrValidation)
-	case p.AccountID == 0:
-		return fmt.Errorf("%w: account_id is required", domain.ErrValidation)
 	case p.CategoryID == 0:
 		return fmt.Errorf("%w: category_id is required", domain.ErrValidation)
+	}
+	// Account routing: bank account vs credit card. Organizze silently drops
+	// credit_card_id when account_id is also set, so we reject the ambiguous
+	// shape up-front rather than let the transaction land on the wrong account.
+	switch {
+	case p.AccountID == 0 && p.CreditCardID == nil:
+		return fmt.Errorf("%w: exactly one of account_id or credit_card_id is required (bank transaction vs credit-card transaction)", domain.ErrValidation)
+	case p.AccountID != 0 && p.CreditCardID != nil:
+		return fmt.Errorf("%w: account_id and credit_card_id are mutually exclusive — Organizze silently drops credit_card_id when account_id is also set. To bill a credit card, pass only credit_card_id (optionally with credit_card_invoice_id)", domain.ErrValidation)
+	case p.CreditCardInvoiceID != nil && p.CreditCardID == nil:
+		return fmt.Errorf("%w: credit_card_invoice_id requires credit_card_id", domain.ErrValidation)
 	}
 	if p.Recurrence != nil && p.Installments != nil {
 		return fmt.Errorf("%w: recurrence_attributes and installments_attributes are mutually exclusive", domain.ErrValidation)
