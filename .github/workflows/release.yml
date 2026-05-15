@@ -66,16 +66,22 @@ jobs:
       # Fetch the ingest token from AWS Secrets Manager at build time.
       # Single source of truth lives in SM (the same secret the ingest
       # Lambda reads at cold start). The deployer IAM user has
-      # ReadIngestSharedSecret scoped to this secret only.
-      # ::add-mask:: registers the value with the runner so it can't
-      # leak into subsequent log output even if downstream actions echo
-      # build-args.
+      # ReadIngestSharedSecret scoped to this secret only. The secret
+      # ID lives in vars.INGESTION_DEPLOY_SECRET_ID so rotating the
+      # secret path (or pointing at a staging copy) doesn't require a
+      # workflow edit. ::add-mask:: registers the value with the runner
+      # so it can't leak into subsequent log output even if downstream
+      # actions echo build-args.
       - name: Fetch ingest shared secret
         id: ingest_secret
         env:
-          SECRET_ID: organizze-mcp/ingest-shared-secret
+          SECRET_ID: ${{ vars.INGESTION_DEPLOY_SECRET_ID }}
         run: |
           set -euo pipefail
+          if [ -z "$SECRET_ID" ]; then
+            echo "::error::vars.INGESTION_DEPLOY_SECRET_ID is not set" >&2
+            exit 1
+          fi
           SECRET="$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_ID" \
             --query SecretString --output text)"
