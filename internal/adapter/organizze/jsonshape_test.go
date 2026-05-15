@@ -90,6 +90,9 @@ func TestJSONShape_DomainTypesDecodeRealisticFixtures(t *testing.T) {
 			tr.AccountID == 0 || tr.OppositeAccountID == nil || *tr.OppositeAccountID == 0 || tr.CategoryID == 0 {
 			t.Errorf("Transfer decode lost fields: %+v", tr)
 		}
+		if len(tr.Attachments) != 1 || tr.Attachments[0] != "https://example.com/transfer-receipt.pdf" {
+			t.Errorf("Transfer decode dropped Attachments: %+v", tr.Attachments)
+		}
 	})
 }
 

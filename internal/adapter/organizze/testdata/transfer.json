@@ -9,5 +9,7 @@
   "oposite_transaction_id": 801,
   "category_id": 99,
   "notes": null,
+  "attachments_count": 1,
+  "attachments": ["https://example.com/transfer-receipt.pdf"],
   "recurrence_id": null
 }
