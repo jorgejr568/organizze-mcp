@@ -81,14 +81,29 @@ docker run --rm \
 
 ## Runtime environment
 
-| Var                  | Required | Purpose                                                  |
-| -------------------- | -------- | -------------------------------------------------------- |
-| `STATS_DATABASE_URL` | yes      | libpq URI; pgxpool dial string.                          |
-| `STATS_QUEUE_URL`    | yes      | SQS queue URL the consumer polls.                        |
-| `AWS_REGION`         | yes      | Used by the AWS SDK default credential/region chain.     |
+| Var                           | Required | Purpose                                                                                                                                       |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STATS_DATABASE_URL`          | yes      | libpq URI; pgxpool dial string.                                                                                                               |
+| `STATS_QUEUE_URL`             | yes      | SQS queue URL the consumer polls.                                                                                                             |
+| `AWS_REGION`                  | yes      | Used by the AWS SDK default credential/region chain.                                                                                          |
+| `CONSUMER_POLLERS`            | no       | Parallel `ReceiveMessage` loops. Default `1`. Increase to fan out across the queue without spawning more container replicas.                  |
+| `CONSUMER_INSERT_CONCURRENCY` | no       | Max concurrent `INSERT`s within a single batch (up to 10). Default `1`. Bumps writer parallelism against `pgxpool`.                            |
 
 AWS credentials come from the SDK's default credential chain (env vars or
 an IAM role on the host).
+
+### Tuning throughput
+
+Defaults preserve the original sequential behaviour. Single-container
+ballpark on us-east-1 → in-region RDS:
+
+- Defaults (`CONSUMER_POLLERS=1`, `CONSUMER_INSERT_CONCURRENCY=1`): ~15 msg/s.
+- `CONSUMER_POLLERS=1`, `CONSUMER_INSERT_CONCURRENCY=10`: ~100 msg/s.
+- `CONSUMER_POLLERS=4`, `CONSUMER_INSERT_CONCURRENCY=10`: ~400 msg/s.
+
+Above ~10 pollers you'll want to bump pgxpool's max conns via
+`STATS_DATABASE_URL?pool_max_conns=N`. Beyond that, run multiple
+container replicas — SQS distributes work across them natively.
 
 ## Failure model
 
