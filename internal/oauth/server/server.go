@@ -79,5 +79,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routes() {
 	s.mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleProtectedResource)
 	s.mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleAuthorizationServer)
-	// /oauth/register, /authorize, /token, /revoke, /mcp registered in later tasks.
+	s.mux.HandleFunc("/oauth/register", s.handleRegister)
+	// /authorize, /token, /revoke, /mcp registered in later tasks.
 }
