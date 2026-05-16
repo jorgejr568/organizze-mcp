@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Configurable consumer parallelism.** The stats consumer's poll loop is now driven by env vars: `STATS_POLL_WORKERS` (parallel `ReceiveMessage` goroutines), `STATS_POLL_BATCH_SIZE` (messages per call), `STATS_POLL_WAIT_SECONDS` (long-poll budget), `STATS_RECEIVE_BACKOFF_SECONDS` (transient-error backoff), and `STATS_PG_POOL_MAX_CONNS` (pgxpool override). All values have safe defaults that match the v0.8.0 single-worker behavior, plus explicit range validation at startup so misconfiguration fails fast with a clear error. Raise `STATS_POLL_WORKERS` (with a matching `STATS_PG_POOL_MAX_CONNS` bump) when one poller can't keep up with the queue.
+
+## [0.8.0] - 2026-05-15
+
+### Added
 - **Stats pipeline** (`cmd/ingest/` + `cmd/consumer/` + `internal/stats/`): end-to-end telemetry from the MCP server to a Postgres-backed event store. Every MCP tool call emits a small non-sensitive event (tool name, duration, success/error status, coarse error class — never arguments, return values, or free-text error messages) on a background goroutine to a Function-URL-fronted ingest Lambda; the ingest fetches its X-Ingest-Token from AWS Secrets Manager at cold start and forwards raw JSON to SQS; a long-running consumer container (Docker image `jorgejr568/organizze-mcp-ingestion-consumer` on Docker Hub) polls SQS and persists each message into a `stats_events` JSONB table with idempotent `INSERT ... ON CONFLICT DO NOTHING` semantics. Two new GitHub Actions workflows: `ingest.yml` builds and ships the ingest Lambda via `aws lambda update-function-code`; `consumer.yml` builds and pushes the consumer Docker image to Docker Hub on push to `main` touching the respective subdirectory; the existing `release.yml` Docker workflow is extended to bake the ingest URL (`vars.INGESTION_DEPLOY_URL`) and token into officially-released binaries via `-ldflags`. The token is fetched from AWS Secrets Manager at build time (single source of truth, same secret the ingest Lambda reads at cold start) — no GitHub-secret-side copy to keep in sync. Set `MCP_STATS_OPTOUT=1` to disable.
 
 ## [0.7.0] - 2026-05-15

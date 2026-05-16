@@ -90,6 +90,20 @@ docker run --rm \
 AWS credentials come from the SDK's default credential chain (env vars or
 an IAM role on the host).
 
+### Optional tuning
+
+These have safe defaults that preserve the v0.8.0 single-worker behavior. Out-of-range values fail at startup; unset values fall back to the default.
+
+| Var                              | Default | Range     | Purpose                                                     |
+| -------------------------------- | ------- | --------- | ----------------------------------------------------------- |
+| `STATS_POLL_WORKERS`             | `1`     | `[1, 32]` | Parallel `ReceiveMessage` goroutines.                       |
+| `STATS_POLL_BATCH_SIZE`          | `10`    | `[1, 10]` | `MaxNumberOfMessages` per call (SQS ceiling is 10).         |
+| `STATS_POLL_WAIT_SECONDS`        | `20`    | `[0, 20]` | `WaitTimeSeconds` for long-polling.                         |
+| `STATS_RECEIVE_BACKOFF_SECONDS`  | `2`     | `[0, 60]` | Sleep after a transient `ReceiveMessage` error.             |
+| `STATS_PG_POOL_MAX_CONNS`        | `0`     | `[0, 100]`| pgxpool `max_conns` override (`0` = leave the pgx default). |
+
+When raising `STATS_POLL_WORKERS` above `1`, also consider bumping `STATS_PG_POOL_MAX_CONNS` so the DB connection pool isn't the new bottleneck.
+
 ## Failure model
 
 The poll loop receives up to 10 messages per `ReceiveMessage` call (long
