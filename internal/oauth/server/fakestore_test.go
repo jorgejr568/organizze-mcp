@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/jorgejr568/organizze-mcp/internal/oauth/storage"
 )
@@ -110,24 +111,60 @@ func (f *fakeStore) CreateAuthCode(_ context.Context, ac storage.AuthCode) error
 	return nil
 }
 
-func (f *fakeStore) ConsumeAuthCode(context.Context, []byte) (storage.AuthCode, error) {
-	panic("fakeStore.ConsumeAuthCode not implemented yet")
+func (f *fakeStore) ConsumeAuthCode(_ context.Context, h []byte) (storage.AuthCode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ac, ok := f.codes[string(h)]
+	if !ok || ac.ConsumedAt != nil || ac.ExpiresAt.Before(time.Now()) {
+		return storage.AuthCode{}, storage.ErrNotFound
+	}
+	now := time.Now().UTC()
+	ac.ConsumedAt = &now
+	f.codes[string(h)] = ac
+	return ac, nil
 }
 
-func (f *fakeStore) CreateToken(context.Context, storage.Token) error {
-	panic("fakeStore.CreateToken not implemented yet")
+func (f *fakeStore) CreateToken(_ context.Context, tok storage.Token) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tokens[string(tok.TokenHash)] = tok
+	return nil
 }
 
-func (f *fakeStore) GetToken(context.Context, []byte) (storage.Token, error) {
-	panic("fakeStore.GetToken not implemented yet")
+func (f *fakeStore) GetToken(_ context.Context, h []byte) (storage.Token, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tokens[string(h)]
+	if !ok {
+		return storage.Token{}, storage.ErrNotFound
+	}
+	return t, nil
 }
 
-func (f *fakeStore) RevokeToken(context.Context, []byte) error {
-	panic("fakeStore.RevokeToken not implemented yet")
+func (f *fakeStore) RevokeToken(_ context.Context, h []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tokens[string(h)]
+	if !ok {
+		return nil
+	}
+	now := time.Now().UTC()
+	t.RevokedAt = &now
+	f.tokens[string(h)] = t
+	return nil
 }
 
-func (f *fakeStore) RevokeRefreshFamily(context.Context, []byte) error {
-	panic("fakeStore.RevokeRefreshFamily not implemented yet")
+func (f *fakeStore) RevokeRefreshFamily(_ context.Context, h []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, t := range f.tokens {
+		if string(t.TokenHash) == string(h) || (t.RefreshFor != nil && string(t.RefreshFor) == string(h)) {
+			now := time.Now().UTC()
+			t.RevokedAt = &now
+			f.tokens[k] = t
+		}
+	}
+	return nil
 }
 
 // Compile-time check.
