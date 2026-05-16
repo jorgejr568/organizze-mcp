@@ -82,5 +82,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/oauth/register", s.handleRegister)
 	s.mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	s.mux.HandleFunc("/oauth/token", s.handleToken)
-	// /revoke, /mcp registered in later tasks.
+	s.mux.HandleFunc("/oauth/revoke", s.handleRevoke)
+	// /mcp registered in later tasks.
 }
