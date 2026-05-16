@@ -21,6 +21,7 @@ type OAuthConfig struct {
 	HTTPAddr       string        // defaults to :8080
 	HTTPTimeout    time.Duration // upstream Organizze timeout
 	OrganizzeBase  string        // defaults to https://api.organizze.com.br/rest/v2
+	LogRequests    bool          // ORGANIZZE_LOG_REQUESTS=1 to verbose-log outbound Organizze calls
 	AccessTokenTTL time.Duration // defaults to 1h
 	RefreshTTL     time.Duration // defaults to 30d
 	SessionTTL     time.Duration // defaults to 24h
@@ -47,6 +48,7 @@ func LoadOAuth() (*OAuthConfig, error) {
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":8080"
 	}
+	cfg.LogRequests = os.Getenv("ORGANIZZE_LOG_REQUESTS") == "1"
 
 	var missing []string
 	if cfg.DatabaseURL == "" {

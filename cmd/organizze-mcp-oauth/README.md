@@ -30,6 +30,7 @@ docker run --rm -p 8080:8080 \
 | `OAUTH_COOKIE_SECRET`  | yes      | HMAC secret for the browser session cookie (>= 32 ASCII bytes; the `openssl rand -hex 32` example produces 64 chars, fine) |
 | `MCP_HTTP_ADDR`        | no       | Listen address, default `:8080`                          |
 | `ORGANIZZE_BASE_URL`   | no       | Override Organizze API base                              |
+| `ORGANIZZE_LOG_REQUESTS` | no     | Set to `1` to log every outbound Organizze request/response to stderr. Authorization header is redacted. |
 | `ORGANIZZE_API_KEY`    | **must NOT be set** | Single-tenant env; the binary refuses to start with it set |
 
 ## Connect from ChatGPT (Developer Mode)
@@ -42,6 +43,8 @@ On first authorize, ChatGPT will open `<your-host>/oauth/authorize` in a
 browser tab. Enter the Organizze email + API key + user-agent string and
 approve. The server validates the credentials against the live Organizze
 API before storing them.
+
+> **Known limitation:** the consent form re-prompts for credentials on every authorize flow today — session cookies and one-click re-authorize are scaffolded (`internal/oauth/server/session.go`) but not yet wired into the handler. Track [issue / future task] to enable session-backed silent re-authorize.
 
 ## Operations
 

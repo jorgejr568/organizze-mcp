@@ -42,7 +42,7 @@ clean:
 .PHONY: oauth-build oauth-migrate-up oauth-migrate-down
 
 oauth-build:
-	go build -o bin/organizze-mcp-oauth ./cmd/organizze-mcp-oauth
+	go build -trimpath -ldflags="-s -w -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=$(VERSION)'" -o bin/organizze-mcp-oauth ./cmd/organizze-mcp-oauth
 
 oauth-migrate-up:
 	@test -n "$$OAUTH_DATABASE_URL" || (echo "OAUTH_DATABASE_URL must be set" && exit 1)

@@ -66,6 +66,7 @@ func run() error {
 		HTTPClient:  httpClient,
 		BaseURL:     cfg.OrganizzeBase,
 		Credentials: credprovider.FromContext,
+		LogRequests: cfg.LogRequests,
 	})
 	if err != nil {
 		return fmt.Errorf("executor: %w", err)
