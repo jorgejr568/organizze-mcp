@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-05-16
+## [0.8.1] - 2026-05-16
 
 ### Changed
 - **Structured JSON logging via `go.uber.org/zap`** across all three binaries (MCP server, ingest Lambda, consumer container). Replaces the stdlib `log` package; every log line is now a single JSON record with `level`, `ts` (RFC3339Nano), `caller`, `msg`, and contextual fields (e.g. `request_id`, `message_id`, `tool`, `status`, `bytes`, `error`). All output still goes to stderr — stdout remains reserved for the MCP stdio JSON-RPC channel. Per-request handler logs in the ingest Lambda and per-message handler logs in the consumer now use child loggers (`logger.With(...)`) for the correlation key, replacing manual `[id]` prefixes. CloudWatch Logs / ECS / Fargate / k8s log aggregators parse the JSON directly into structured fields. The Organizze HTTP executor's `ORGANIZZE_LOG_REQUESTS=1` verbose mode (added in v0.7.0) also moves to the same zap logger: `RequestExecutorOptions.LogWriter io.Writer` is replaced with `Logger *zap.Logger`, and the request/response lines become structured records (`organizze request` / `organizze response`) with `method`, `path`, `body`, `status`, `error` fields. The redaction guarantee (Authorization header value and API key never logged) is unchanged and still test-asserted. The ingest and consumer modules add `go.uber.org/zap` to their `go.mod`s; tests use `zap.NewNop()` / `zaptest/observer` instead of `bytes.Buffer`.
