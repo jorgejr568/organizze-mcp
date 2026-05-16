@@ -12,7 +12,8 @@ package handler
 
 import (
 	"context"
-	"log"
+
+	"go.uber.org/zap"
 )
 
 // StatsStore is the narrow persistence interface the handler depends on.
@@ -42,7 +43,7 @@ type Result struct {
 // Handler holds the runtime dependencies that survive across batches.
 type Handler struct {
 	Store StatsStore
-	Log   *log.Logger
+	Log   *zap.Logger
 }
 
 // Process iterates the batch, calling Store.Insert for each record.
@@ -50,19 +51,20 @@ type Handler struct {
 // the rest. Failures are logged with the message ID as the correlation
 // key and collected into Result.FailedMessageIDs.
 func (h *Handler) Process(ctx context.Context, records []Record) Result {
-	logger := h.Log
-	if logger == nil {
-		logger = log.Default()
+	base := h.Log
+	if base == nil {
+		base = zap.NewNop()
 	}
 
 	var failed []string
 	for _, rec := range records {
+		logger := base.With(zap.String("message_id", rec.MessageID))
 		if err := h.Store.Insert(ctx, rec.MessageID, rec.Body); err != nil {
-			logger.Printf("[%s] store insert failed: %v", rec.MessageID, err)
+			logger.Error("store insert failed", zap.Error(err))
 			failed = append(failed, rec.MessageID)
 			continue
 		}
-		logger.Printf("[%s] persisted (%d bytes)", rec.MessageID, len(rec.Body))
+		logger.Info("persisted", zap.Int("bytes", len(rec.Body)))
 	}
 	return Result{FailedMessageIDs: failed}
 }

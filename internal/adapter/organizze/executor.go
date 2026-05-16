@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+
+	"go.uber.org/zap"
 )
 
 // RequestExecutorOptions configures a RequestExecutor.
@@ -19,15 +20,16 @@ type RequestExecutorOptions struct {
 	APIKey     string     // required (Basic-Auth password)
 	UserAgent  string     // required (Organizze rejects requests without it)
 
-	// LogRequests, when true, emits one stderr line per outgoing request
-	// and one per response (truncated to 2KB). The Authorization header
-	// is never written to the log. Off by default; trigger via the
-	// ORGANIZZE_LOG_REQUESTS=1 env var (read in internal/config).
+	// LogRequests, when true, emits one structured log record per outgoing
+	// request and one per response (body truncated to 2KB). The
+	// Authorization header is never written to the log. Off by default;
+	// trigger via the ORGANIZZE_LOG_REQUESTS=1 env var (read in
+	// internal/config).
 	LogRequests bool
 
-	// LogWriter receives the verbose-mode output. Defaults to os.Stderr
-	// when nil. Tests inject a *bytes.Buffer.
-	LogWriter io.Writer
+	// Logger receives the verbose-mode output. Defaults to zap.NewNop() when
+	// nil; the composition root injects the process-wide JSON logger.
+	Logger *zap.Logger
 }
 
 // RequestExecutor encapsulates Basic Auth, User-Agent, JSON marshaling,
@@ -40,7 +42,7 @@ type RequestExecutor struct {
 	apiKey      string
 	userAgent   string
 	logRequests bool
-	logWriter   io.Writer
+	logger      *zap.Logger
 }
 
 // NewRequestExecutor validates options and constructs a RequestExecutor.
@@ -57,9 +59,9 @@ func NewRequestExecutor(opts RequestExecutorOptions) (*RequestExecutor, error) {
 	case opts.UserAgent == "":
 		return nil, errors.New("organizze: UserAgent is required")
 	}
-	w := opts.LogWriter
-	if w == nil {
-		w = os.Stderr
+	logger := opts.Logger
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 	return &RequestExecutor{
 		client:      opts.HTTPClient,
@@ -68,7 +70,7 @@ func NewRequestExecutor(opts RequestExecutorOptions) (*RequestExecutor, error) {
 		apiKey:      opts.APIKey,
 		userAgent:   opts.UserAgent,
 		logRequests: opts.LogRequests,
-		logWriter:   w,
+		logger:      logger.Named("organizze"),
 	}, nil
 }
 
@@ -121,17 +123,26 @@ func (e *RequestExecutor) do(ctx context.Context, method, path string, body, out
 
 	// Single-bool fast path: when logging is off, allocate nothing extra.
 	if e.logRequests {
-		if len(bodyBytes) == 0 {
-			fmt.Fprintf(e.logWriter, "organizze: --> %s %s\n", method, path)
-		} else {
-			fmt.Fprintf(e.logWriter, "organizze: --> %s %s body=%s\n", method, path, bodyBytes)
+		fields := []zap.Field{
+			zap.String("direction", "request"),
+			zap.String("method", method),
+			zap.String("path", path),
 		}
+		if len(bodyBytes) > 0 {
+			fields = append(fields, zap.ByteString("body", bodyBytes))
+		}
+		e.logger.Info("organizze request", fields...)
 	}
 
 	resp, err := e.client.Do(req)
 	if err != nil {
 		if e.logRequests {
-			fmt.Fprintf(e.logWriter, "organizze: <-- %s %s error=%v\n", method, path, err)
+			e.logger.Error("organizze request failed",
+				zap.String("direction", "response"),
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.Error(err),
+			)
 		}
 		return fmt.Errorf("organizze: do request: %w", err)
 	}
@@ -142,7 +153,13 @@ func (e *RequestExecutor) do(ctx context.Context, method, path string, body, out
 	if e.logRequests {
 		const maxLogBytes = 2048
 		peek, _ := io.ReadAll(io.LimitReader(resp.Body, maxLogBytes))
-		fmt.Fprintf(e.logWriter, "organizze: <-- %s %s status=%d body=%s\n", method, path, resp.StatusCode, peek)
+		e.logger.Info("organizze response",
+			zap.String("direction", "response"),
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.Int("status", resp.StatusCode),
+			zap.ByteString("body", peek),
+		)
 		// Re-attach the peeked bytes + remainder so downstream decoders
 		// behave identically to the non-logging path. The original
 		// resp.Body still satisfies io.Closer for the deferred close.

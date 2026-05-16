@@ -1,16 +1,17 @@
 package stats
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestHTTPReporter_PostsEventToIngestURL(t *testing.T) {
@@ -35,7 +36,7 @@ func TestHTTPReporter_PostsEventToIngestURL(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r := NewHTTPReporter(ctx, srv.URL, "shh-token", "1.2.3", "stdio", 8, log.New(io.Discard, "", 0))
+	r := NewHTTPReporter(ctx, srv.URL, "shh-token", "1.2.3", "stdio", 8, zap.NewNop())
 
 	r.RecordToolCall("list_transactions", "ok", "", 17)
 
@@ -81,7 +82,7 @@ func TestHTTPReporter_RecordIsNonBlockingWhenServerIsSlow(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r := NewHTTPReporter(ctx, srv.URL, "tok", "v", "t", 4, log.New(io.Discard, "", 0))
+	r := NewHTTPReporter(ctx, srv.URL, "tok", "v", "t", 4, zap.NewNop())
 
 	// Record should not block even though the server is hanging on the
 	// in-flight POST. Time 100 invocations and assert wall-clock budget.
@@ -95,8 +96,8 @@ func TestHTTPReporter_RecordIsNonBlockingWhenServerIsSlow(t *testing.T) {
 }
 
 func TestHTTPReporter_DropsEventsWhenBufferFull(t *testing.T) {
-	var logBuf bytes.Buffer
-	logger := log.New(&logBuf, "", 0)
+	core, logs := observer.New(zapcore.WarnLevel)
+	logger := zap.New(core)
 
 	block := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,17 +117,16 @@ func TestHTTPReporter_DropsEventsWhenBufferFull(t *testing.T) {
 	}
 
 	waitFor(t, 1*time.Second, func() bool {
-		return bytes.Contains(logBuf.Bytes(), []byte("dropped tool-call event"))
+		return logs.FilterMessage("dropped tool-call event").Len() > 0
 	})
-	if !bytes.Contains(logBuf.Bytes(), []byte("dropped tool-call event")) {
-		t.Fatalf("expected drop warning in log; got:\n%s", logBuf.String())
+	if logs.FilterMessage("dropped tool-call event").Len() == 0 {
+		t.Fatalf("expected drop warning in log; entries:\n%v", logs.All())
 	}
 }
 
 func TestHTTPReporter_LogsWhenIngestReturnsError(t *testing.T) {
-	var logBuf bytes.Buffer
-	var mu sync.Mutex
-	logger := log.New(&teeWriter{buf: &logBuf, mu: &mu}, "", 0)
+	core, logs := observer.New(zapcore.WarnLevel)
+	logger := zap.New(core)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
@@ -139,23 +139,16 @@ func TestHTTPReporter_LogsWhenIngestReturnsError(t *testing.T) {
 	r.RecordToolCall("t", "ok", "", 1)
 
 	waitFor(t, 2*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return bytes.Contains(logBuf.Bytes(), []byte("ingest responded 500"))
+		return logs.FilterMessage("ingest non-success").Len() > 0
 	})
-}
-
-// --- helpers ---
-
-type teeWriter struct {
-	buf *bytes.Buffer
-	mu  *sync.Mutex
-}
-
-func (t *teeWriter) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.buf.Write(p)
+	entries := logs.FilterMessage("ingest non-success").All()
+	if len(entries) == 0 {
+		t.Fatalf("expected ingest non-success log; entries:\n%v", logs.All())
+	}
+	gotStatus, _ := entries[0].ContextMap()["status"].(int64)
+	if gotStatus != 500 {
+		t.Fatalf("status field: got %v want 500", gotStatus)
+	}
 }
 
 func waitFor(t *testing.T, max time.Duration, cond func() bool) {

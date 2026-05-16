@@ -3,9 +3,9 @@ package handler
 import (
 	"context"
 	"errors"
-	"io"
-	"log"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 type call struct {
@@ -30,7 +30,7 @@ func newHandler(t *testing.T, store StatsStore) *Handler {
 	t.Helper()
 	return &Handler{
 		Store: store,
-		Log:   log.New(io.Discard, "", 0),
+		Log:   zap.NewNop(),
 	}
 }
 

@@ -3,14 +3,13 @@ package handler
 import (
 	"context"
 	"errors"
-	"io"
-	"log"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"go.uber.org/zap"
 )
 
 type fakeSQS struct {
@@ -30,7 +29,7 @@ func newHandler(t *testing.T, sender SendMessageAPI) *Handler {
 		QueueURL: "https://sqs.us-east-1.amazonaws.com/000/test",
 		Secret:   "super-secret",
 		SQS:      sender,
-		Log:      log.New(io.Discard, "", 0),
+		Log:      zap.NewNop(),
 	}
 }
 

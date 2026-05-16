@@ -1,7 +1,6 @@
 package organizze
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -10,6 +9,10 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
 )
@@ -355,7 +358,7 @@ func TestTransactionRepository_Update_OmitsAccountIDAndCreditCardInvoiceIDWhenNi
 }
 
 func TestTransactionRepository_Create_LoggingEnabled_EmitsBodyLine(t *testing.T) {
-	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{"id":1234,"description":"MCP test","amount_cents":-1}`)
@@ -369,7 +372,7 @@ func TestTransactionRepository_Create_LoggingEnabled_EmitsBodyLine(t *testing.T)
 		APIKey:      "test-key",
 		UserAgent:   "Test (test@example.com)",
 		LogRequests: true,
-		LogWriter:   &buf,
+		Logger:      zap.New(core),
 	})
 	if err != nil {
 		t.Fatalf("NewRequestExecutor: %v", err)
@@ -391,31 +394,47 @@ func TestTransactionRepository_Create_LoggingEnabled_EmitsBodyLine(t *testing.T)
 		t.Errorf("tx.ID = %d, want 1234", tx.ID)
 	}
 
-	logged := buf.String()
 	// Request-side: outbound body contains every populated field.
+	reqEntries := logs.FilterMessage("organizze request").All()
+	if len(reqEntries) != 1 {
+		t.Fatalf("expected 1 request entry, got %d", len(reqEntries))
+	}
+	reqFields := reqEntries[0].ContextMap()
+	if reqFields["method"] != "POST" || reqFields["path"] != "/transactions" {
+		t.Errorf("request method/path: %v / %v", reqFields["method"], reqFields["path"])
+	}
+	reqBody, _ := reqFields["body"].(string)
 	for _, want := range []string{
-		"POST",
-		"/transactions",
 		`"description":"MCP test - auto-delete"`,
 		`"amount_cents":-1`,
 		`"date":"2026-05-15"`,
 		`"category_id":42`,
 		`"account_id":7`,
 	} {
-		if !strings.Contains(logged, want) {
-			t.Errorf("request log missing %q; full output:\n%s", want, logged)
+		if !strings.Contains(reqBody, want) {
+			t.Errorf("request body missing %q; got %q", want, reqBody)
 		}
 	}
+
 	// Response-side: status and id appear.
-	for _, want := range []string{"201", `"id":1234`} {
-		if !strings.Contains(logged, want) {
-			t.Errorf("response log missing %q; full output:\n%s", want, logged)
-		}
+	respEntries := logs.FilterMessage("organizze response").All()
+	if len(respEntries) != 1 {
+		t.Fatalf("expected 1 response entry, got %d", len(respEntries))
 	}
+	respFields := respEntries[0].ContextMap()
+	if got, _ := respFields["status"].(int64); got != 201 {
+		t.Errorf("response status = %v, want 201", respFields["status"])
+	}
+	respBody, _ := respFields["body"].(string)
+	if !strings.Contains(respBody, `"id":1234`) {
+		t.Errorf("response body missing id:1234; got %q", respBody)
+	}
+
 	// Redaction guard still holds at the repository layer.
+	dump := dumpEntries(logs.All())
 	for _, banned := range []string{"Basic ", "Authorization", "test-key"} {
-		if strings.Contains(logged, banned) {
-			t.Errorf("log leaked %q; full output:\n%s", banned, logged)
+		if strings.Contains(dump, banned) {
+			t.Errorf("log leaked %q; full output:\n%s", banned, dump)
 		}
 	}
 }
