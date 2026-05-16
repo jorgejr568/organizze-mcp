@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +17,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/mcp"
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/organizze"
@@ -41,6 +42,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	logger, err := newLogger()
+	if err != nil {
+		return fmt.Errorf("build logger: %w", err)
+	}
+	defer func() { _ = logger.Sync() }()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -67,6 +74,7 @@ func run() error {
 		BaseURL:     cfg.OrganizzeBase,
 		Credentials: credprovider.FromContext,
 		LogRequests: cfg.LogRequests,
+		Logger:      logger,
 	})
 	if err != nil {
 		return fmt.Errorf("executor: %w", err)
@@ -98,6 +106,7 @@ func run() error {
 		RefreshTokenTTL:   cfg.RefreshTTL,
 		SessionTTL:        cfg.SessionTTL,
 		CookieSecret:      cfg.CookieSecret,
+		Logger:            logger,
 	})
 
 	mcpServer := mcp.New(mcp.Dependencies{
@@ -129,7 +138,10 @@ func run() error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("organizze-mcp-oauth listening on %s (public_url=%s)", cfg.HTTPAddr, cfg.PublicURL)
+		logger.Info("organizze-mcp-oauth listening",
+			zap.String("addr", cfg.HTTPAddr),
+			zap.String("public_url", cfg.PublicURL),
+		)
 		err := httpSrv.ListenAndServe()
 		if !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -141,9 +153,22 @@ func run() error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = httpSrv.Shutdown(shutdownCtx)
+		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown failed", zap.Error(err))
+		}
 		return nil
 	case err := <-errCh:
 		return err
 	}
+}
+
+// newLogger returns a JSON-formatted production logger writing to stderr.
+// Mirrors cmd/organizze-mcp/main.go so all binaries emit the same shape.
+func newLogger() (*zap.Logger, error) {
+	c := zap.NewProductionConfig()
+	c.OutputPaths = []string{"stderr"}
+	c.ErrorOutputPaths = []string{"stderr"}
+	c.EncoderConfig.TimeKey = "ts"
+	c.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	return c.Build()
 }

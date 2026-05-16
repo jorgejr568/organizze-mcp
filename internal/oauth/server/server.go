@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/jorgejr568/organizze-mcp/internal/oauth/storage"
 )
 
@@ -42,8 +44,14 @@ type Config struct {
 	// SessionTTL defaults to 24h.
 	SessionTTL time.Duration
 
-	// CookieSecret signs the session cookie (HMAC-SHA256). Required at runtime.
+	// CookieSecret signs the session cookie (HMAC-SHA256) and the
+	// authorize-flow consent binding. Required at runtime; minimum 32 raw bytes.
 	CookieSecret []byte
+
+	// Logger receives structured records for handler-level events
+	// (rate-limit hits, template-render errors, etc.). Defaults to
+	// zap.NewNop() so tests need not provide one.
+	Logger *zap.Logger
 }
 
 // Server is the http.Handler implementation.
@@ -67,6 +75,10 @@ func New(cfg Config) *Server {
 	if cfg.SessionTTL == 0 {
 		cfg.SessionTTL = 24 * time.Hour
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = zap.NewNop()
+	}
+	cfg.Logger = cfg.Logger.Named("oauth")
 	s := &Server{cfg: cfg, mux: http.NewServeMux()}
 	s.routes()
 	return s
@@ -83,5 +95,4 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	s.mux.HandleFunc("/oauth/token", s.handleToken)
 	s.mux.HandleFunc("/oauth/revoke", s.handleRevoke)
-	// /mcp registered in later tasks.
 }
