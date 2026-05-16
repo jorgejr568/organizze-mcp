@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
+	"github.com/jorgejr568/organizze-mcp/internal/oauth/credprovider"
 )
 
 func TestTransactionRepository_List_PassesAllFilters(t *testing.T) {
@@ -368,9 +369,7 @@ func TestTransactionRepository_Create_LoggingEnabled_EmitsBodyLine(t *testing.T)
 	exec, err := NewRequestExecutor(RequestExecutorOptions{
 		HTTPClient:  NewClient(ClientOptions{}),
 		BaseURL:     ts.URL,
-		Email:       "test@example.com",
-		APIKey:      "test-key",
-		UserAgent:   "Test (test@example.com)",
+		Credentials: credprovider.Static("test@example.com", "test-key", "Test (test@example.com)"),
 		LogRequests: true,
 		Logger:      zap.New(core),
 	})

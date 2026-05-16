@@ -20,6 +20,7 @@ import (
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/mcp"
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/organizze"
 	"github.com/jorgejr568/organizze-mcp/internal/config"
+	"github.com/jorgejr568/organizze-mcp/internal/oauth/credprovider"
 	"github.com/jorgejr568/organizze-mcp/internal/stats"
 	"github.com/jorgejr568/organizze-mcp/internal/usecase"
 )
@@ -75,9 +76,7 @@ func buildServer(ctx context.Context, cfg *config.Config, logger *zap.Logger, tr
 	exec, err := organizze.NewRequestExecutor(organizze.RequestExecutorOptions{
 		HTTPClient:  httpClient,
 		BaseURL:     cfg.BaseURL,
-		Email:       cfg.Email,
-		APIKey:      cfg.APIKey,
-		UserAgent:   cfg.UserAgent,
+		Credentials: credprovider.Static(cfg.Email, cfg.APIKey, cfg.UserAgent),
 		LogRequests: cfg.LogRequests,
 		Logger:      logger,
 	})

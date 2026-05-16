@@ -12,6 +12,7 @@ import (
 
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/mcp"
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/organizze"
+	"github.com/jorgejr568/organizze-mcp/internal/oauth/credprovider"
 	"github.com/jorgejr568/organizze-mcp/internal/usecase"
 )
 
@@ -116,11 +117,9 @@ func newRealServer(t *testing.T) *mcpsdk.Server {
 	api := fakeOrganizze(t)
 	client := organizze.NewClient(organizze.ClientOptions{})
 	exec, err := organizze.NewRequestExecutor(organizze.RequestExecutorOptions{
-		HTTPClient: client,
-		BaseURL:    api.URL,
-		Email:      "test@example.com",
-		APIKey:     "k",
-		UserAgent:  "Test (e@x.com)",
+		HTTPClient:  client,
+		BaseURL:     api.URL,
+		Credentials: credprovider.Static("test@example.com", "k", "Test (e@x.com)"),
 	})
 	if err != nil {
 		t.Fatalf("executor: %v", err)
