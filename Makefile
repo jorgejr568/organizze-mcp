@@ -50,4 +50,4 @@ oauth-migrate-up:
 
 oauth-migrate-down:
 	@test -n "$$OAUTH_DATABASE_URL" || (echo "OAUTH_DATABASE_URL must be set" && exit 1)
-	psql "$$OAUTH_DATABASE_URL" -c "DROP TABLE IF EXISTS oauth_tokens, oauth_codes, oauth_clients, oauth_sessions, oauth_users CASCADE;"
+	psql "$$OAUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f internal/oauth/storage/migrations/001_down.sql
