@@ -80,5 +80,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleProtectedResource)
 	s.mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleAuthorizationServer)
 	s.mux.HandleFunc("/oauth/register", s.handleRegister)
-	// /authorize, /token, /revoke, /mcp registered in later tasks.
+	s.mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
+	// /token, /revoke, /mcp registered in later tasks.
 }

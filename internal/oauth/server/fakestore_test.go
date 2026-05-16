@@ -58,16 +58,37 @@ func (f *fakeStore) GetClient(_ context.Context, id string) (storage.Client, err
 // Implement the bare minimum required to satisfy the interface so the
 // fakeStore compiles; have them panic so accidental use is loud.
 
-func (f *fakeStore) UpsertUserByEmail(context.Context, storage.User) (storage.User, error) {
-	panic("fakeStore.UpsertUserByEmail not implemented yet")
+func (f *fakeStore) UpsertUserByEmail(_ context.Context, u storage.User) (storage.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.emails[u.OrganizzeEmail]; ok {
+		u.ID = id
+		f.users[id] = u
+		return u, nil
+	}
+	f.nextID++
+	u.ID = f.nextID
+	f.users[u.ID] = u
+	f.emails[u.OrganizzeEmail] = u.ID
+	return u, nil
 }
 
-func (f *fakeStore) GetUser(context.Context, int64) (storage.User, error) {
-	panic("fakeStore.GetUser not implemented yet")
+func (f *fakeStore) GetUser(_ context.Context, id int64) (storage.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if u, ok := f.users[id]; ok {
+		return u, nil
+	}
+	return storage.User{}, storage.ErrNotFound
 }
 
-func (f *fakeStore) GetUserByEmail(context.Context, string) (storage.User, error) {
-	panic("fakeStore.GetUserByEmail not implemented yet")
+func (f *fakeStore) GetUserByEmail(_ context.Context, e string) (storage.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.emails[e]; ok {
+		return f.users[id], nil
+	}
+	return storage.User{}, storage.ErrNotFound
 }
 
 func (f *fakeStore) CreateSession(context.Context, storage.Session) error {
@@ -82,8 +103,11 @@ func (f *fakeStore) DeleteSession(context.Context, string) error {
 	panic("fakeStore.DeleteSession not implemented yet")
 }
 
-func (f *fakeStore) CreateAuthCode(context.Context, storage.AuthCode) error {
-	panic("fakeStore.CreateAuthCode not implemented yet")
+func (f *fakeStore) CreateAuthCode(_ context.Context, ac storage.AuthCode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.codes[string(ac.CodeHash)] = ac
+	return nil
 }
 
 func (f *fakeStore) ConsumeAuthCode(context.Context, []byte) (storage.AuthCode, error) {

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Authorize {{.ClientName}}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 4em auto; padding: 0 1em; color: #222; }
+    h1 { font-size: 1.4em; }
+    label { display: block; margin-top: 1em; font-weight: 600; }
+    input[type=email], input[type=password] { width: 100%; padding: 0.6em; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { margin-top: 1.5em; padding: 0.7em 1.2em; background: #1a73e8; color: white; border: 0; border-radius: 4px; cursor: pointer; }
+    .err { color: #b00020; margin-top: 1em; }
+    .hint { color: #666; font-size: 0.9em; margin-top: 0.4em; }
+  </style>
+</head>
+<body>
+  <h1>Authorize <strong>{{.ClientName}}</strong></h1>
+  <p>{{.ClientName}} is requesting access to your Organizze account through this MCP server.</p>
+  {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+  <form method="POST" action="/oauth/authorize">
+    <input type="hidden" name="csrf"          value="{{.CSRF}}">
+    <input type="hidden" name="client_id"     value="{{.ClientID}}">
+    <input type="hidden" name="redirect_uri"  value="{{.RedirectURI}}">
+    <input type="hidden" name="state"         value="{{.State}}">
+    <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
+    <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+    <label for="email">Organizze email</label>
+    <input id="email" type="email" name="email" required autocomplete="email">
+    <label for="api_key">Organizze API key</label>
+    <input id="api_key" type="password" name="api_key" required autocomplete="off">
+    <div class="hint">Get your key from organizze.com.br &rarr; Settings &rarr; API.</div>
+    <label for="user_agent">App identifier (e.g. <code>my-name (me@example.com)</code>)</label>
+    <input id="user_agent" type="text" name="user_agent" required>
+    <button type="submit">Authorize</button>
+  </form>
+</body>
+</html>
