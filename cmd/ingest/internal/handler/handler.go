@@ -9,11 +9,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"go.uber.org/zap"
 )
 
 // SendMessageAPI is the subset of the SQS client used by the handler.
@@ -28,25 +28,25 @@ type Handler struct {
 	QueueURL string
 	Secret   string
 	SQS      SendMessageAPI
-	Log      *log.Logger
+	Log      *zap.Logger
 }
 
 // Handle is the Lambda Function URL entrypoint (payload format v2.0).
 func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
-	logger := h.Log
-	if logger == nil {
-		logger = log.Default()
+	base := h.Log
+	if base == nil {
+		base = zap.NewNop()
 	}
-	prefix := "[" + req.RequestContext.RequestID + "] "
+	logger := base.With(zap.String("request_id", req.RequestContext.RequestID))
 
 	provided := req.Headers["x-ingest-token"]
 	if subtle.ConstantTimeCompare([]byte(provided), []byte(h.Secret)) != 1 {
-		logger.Print(prefix + "auth: rejected request (token mismatch or missing)")
+		logger.Warn("auth rejected")
 		return jsonResponse(401, `{"error":"unauthorized"}`), nil
 	}
 
 	if req.RequestContext.HTTP.Method != "POST" {
-		logger.Printf(prefix+"method %s rejected", req.RequestContext.HTTP.Method)
+		logger.Warn("method rejected", zap.String("method", req.RequestContext.HTTP.Method))
 		return jsonResponse(405, `{"error":"method not allowed"}`), nil
 	}
 
@@ -54,17 +54,17 @@ func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLReques
 	if req.IsBase64Encoded {
 		decoded, err := base64.StdEncoding.DecodeString(req.Body)
 		if err != nil {
-			logger.Print(prefix + "body: base64 decode failed")
+			logger.Warn("base64 decode failed", zap.Error(err))
 			return jsonResponse(400, `{"error":"invalid body encoding"}`), nil
 		}
 		body = decoded
 	}
 	if len(body) == 0 {
-		logger.Print(prefix + "body: empty")
+		logger.Warn("empty body")
 		return jsonResponse(400, `{"error":"empty body"}`), nil
 	}
 	if !json.Valid(body) {
-		logger.Print(prefix + "body: invalid json")
+		logger.Warn("invalid json")
 		return jsonResponse(400, `{"error":"invalid json"}`), nil
 	}
 
@@ -73,12 +73,15 @@ func (h *Handler) Handle(ctx context.Context, req events.LambdaFunctionURLReques
 		MessageBody: aws.String(string(body)),
 	})
 	if err != nil {
-		logger.Printf(prefix+"sqs send failed: %v", err)
+		logger.Error("sqs send failed", zap.Error(err))
 		return jsonResponse(500, `{"error":"internal error"}`), nil
 	}
 
 	msgID := aws.ToString(out.MessageId)
-	logger.Printf(prefix+"queued message %s (%d bytes)", msgID, len(body))
+	logger.Info("queued message",
+		zap.String("message_id", msgID),
+		zap.Int("bytes", len(body)),
+	)
 	return jsonResponse(202, fmt.Sprintf(`{"queued":true,"message_id":%q}`, msgID)), nil
 }
 

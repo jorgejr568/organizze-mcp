@@ -1,7 +1,6 @@
 package organizze
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
 )
@@ -203,7 +206,7 @@ func TestExecutor_PropagatesContextCancel(t *testing.T) {
 }
 
 func TestExecutor_LoggingDisabled_WritesNothing(t *testing.T) {
-	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"ok":true}`)
 	}))
@@ -216,7 +219,7 @@ func TestExecutor_LoggingDisabled_WritesNothing(t *testing.T) {
 		APIKey:      "test-key",
 		UserAgent:   "Test (test@example.com)",
 		LogRequests: false,
-		LogWriter:   &buf,
+		Logger:      zap.New(core),
 	})
 	if err != nil {
 		t.Fatalf("NewRequestExecutor: %v", err)
@@ -228,13 +231,13 @@ func TestExecutor_LoggingDisabled_WritesNothing(t *testing.T) {
 	if err := exec.Get(context.Background(), "/users/3", &out); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("LogWriter received %d bytes with LogRequests=false: %q", buf.Len(), buf.String())
+	if n := logs.Len(); n != 0 {
+		t.Errorf("Logger received %d entries with LogRequests=false: %v", n, logs.All())
 	}
 }
 
 func TestExecutor_LoggingEnabled_CapturesMethodPathBody_RedactsAuth(t *testing.T) {
-	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{"id":99}`)
@@ -248,7 +251,7 @@ func TestExecutor_LoggingEnabled_CapturesMethodPathBody_RedactsAuth(t *testing.T
 		APIKey:      "super-secret-key",
 		UserAgent:   "Test (test@example.com)",
 		LogRequests: true,
-		LogWriter:   &buf,
+		Logger:      zap.New(core),
 	})
 	if err != nil {
 		t.Fatalf("NewRequestExecutor: %v", err)
@@ -262,29 +265,73 @@ func TestExecutor_LoggingEnabled_CapturesMethodPathBody_RedactsAuth(t *testing.T
 		t.Fatalf("Post: %v", err)
 	}
 
-	logged := buf.String()
-	if logged == "" {
-		t.Fatal("LogWriter received nothing with LogRequests=true")
+	all := logs.All()
+	if len(all) < 2 {
+		t.Fatalf("expected request + response entries, got %d: %v", len(all), all)
 	}
 
-	// Request-line assertions: method, path, body fields all present.
-	for _, want := range []string{"POST", "/transactions", `"description":"Coffee"`, `"amount_cents":-1500`} {
-		if !strings.Contains(logged, want) {
-			t.Errorf("log missing %q; full output:\n%s", want, logged)
+	reqEntries := logs.FilterMessage("organizze request").All()
+	if len(reqEntries) != 1 {
+		t.Fatalf("expected 1 request entry, got %d", len(reqEntries))
+	}
+	reqFields := reqEntries[0].ContextMap()
+	if reqFields["method"] != "POST" {
+		t.Errorf("request method = %v, want POST", reqFields["method"])
+	}
+	if reqFields["path"] != "/transactions" {
+		t.Errorf("request path = %v, want /transactions", reqFields["path"])
+	}
+	reqBody, _ := reqFields["body"].(string)
+	for _, want := range []string{`"description":"Coffee"`, `"amount_cents":-1500`} {
+		if !strings.Contains(reqBody, want) {
+			t.Errorf("request body missing %q; got %q", want, reqBody)
 		}
 	}
 
-	// Response-line assertions: status and response body fragment.
-	for _, want := range []string{"201", `"id":99`} {
-		if !strings.Contains(logged, want) {
-			t.Errorf("log missing %q; full output:\n%s", want, logged)
-		}
+	respEntries := logs.FilterMessage("organizze response").All()
+	if len(respEntries) != 1 {
+		t.Fatalf("expected 1 response entry, got %d", len(respEntries))
+	}
+	respFields := respEntries[0].ContextMap()
+	if got, _ := respFields["status"].(int64); got != 201 {
+		t.Errorf("response status = %v, want 201", respFields["status"])
+	}
+	respBody, _ := respFields["body"].(string)
+	if !strings.Contains(respBody, `"id":99`) {
+		t.Errorf("response body missing id:99; got %q", respBody)
 	}
 
-	// Redaction assertions: Authorization header value and API key MUST NOT appear.
+	// Redaction assertions: Authorization header value and API key MUST NOT appear
+	// anywhere across the captured log records.
+	dump := dumpEntries(all)
 	for _, banned := range []string{"Basic ", "super-secret-key", "Authorization"} {
-		if strings.Contains(logged, banned) {
-			t.Errorf("log leaked %q; full output:\n%s", banned, logged)
+		if strings.Contains(dump, banned) {
+			t.Errorf("log leaked %q; full output:\n%s", banned, dump)
 		}
+	}
+}
+
+func dumpEntries(entries []observer.LoggedEntry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString(e.Message)
+		for k, v := range e.ContextMap() {
+			b.WriteString(" ")
+			b.WriteString(k)
+			b.WriteString("=")
+			_, _ = b.WriteString(toString(v))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func toString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
 	}
 }

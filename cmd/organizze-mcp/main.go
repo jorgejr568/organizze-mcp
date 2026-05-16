@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +14,8 @@ import (
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/mcp"
 	"github.com/jorgejr568/organizze-mcp/internal/adapter/organizze"
@@ -38,19 +39,37 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	logger, err := newLogger()
+	if err != nil {
+		return fmt.Errorf("build logger: %w", err)
+	}
+	defer func() { _ = logger.Sync() }()
+
 	switch cfg.Transport {
 	case "stdio":
-		return runWithTransport(ctx, cfg, &mcpsdk.StdioTransport{}, "stdio")
+		return runWithTransport(ctx, cfg, logger, &mcpsdk.StdioTransport{}, "stdio")
 	case "http":
-		return runHTTP(ctx, cfg)
+		return runHTTP(ctx, cfg, logger)
 	default:
 		return fmt.Errorf("unsupported transport %q", cfg.Transport)
 	}
 }
 
+// newLogger returns a JSON-formatted production logger that writes to stderr.
+// Stdout is reserved for the MCP stdio protocol; routing logs anywhere else
+// would corrupt the JSON-RPC stream.
+func newLogger() (*zap.Logger, error) {
+	cfg := zap.NewProductionConfig()
+	cfg.OutputPaths = []string{"stderr"}
+	cfg.ErrorOutputPaths = []string{"stderr"}
+	cfg.EncoderConfig.TimeKey = "ts"
+	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	return cfg.Build()
+}
+
 // buildServer is the dependency-injection graph. It is the ONLY place that
 // imports both adapter/organizze and adapter/mcp concretes.
-func buildServer(ctx context.Context, cfg *config.Config, transport string) (*mcpsdk.Server, error) {
+func buildServer(ctx context.Context, cfg *config.Config, logger *zap.Logger, transport string) (*mcpsdk.Server, error) {
 	httpClient := organizze.NewClient(organizze.ClientOptions{Timeout: cfg.HTTPTimeout})
 
 	exec, err := organizze.NewRequestExecutor(organizze.RequestExecutorOptions{
@@ -60,14 +79,14 @@ func buildServer(ctx context.Context, cfg *config.Config, transport string) (*mc
 		APIKey:      cfg.APIKey,
 		UserAgent:   cfg.UserAgent,
 		LogRequests: cfg.LogRequests,
-		// LogWriter intentionally left zero - executor defaults to os.Stderr.
+		Logger:      logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build request executor: %w", err)
 	}
 
 	deps := mcp.Dependencies{
-		Reporter:    buildStatsReporter(ctx, transport),
+		Reporter:    buildStatsReporter(ctx, logger, transport),
 		User:        usecase.NewUserService(organizze.NewUserRepository(exec)),
 		Account:     usecase.NewAccountService(organizze.NewAccountRepository(exec)),
 		Category:    usecase.NewCategoryService(organizze.NewCategoryRepository(exec)),
@@ -80,18 +99,20 @@ func buildServer(ctx context.Context, cfg *config.Config, transport string) (*mc
 	return mcp.New(deps), nil
 }
 
-func runWithTransport(ctx context.Context, cfg *config.Config, t mcpsdk.Transport, name string) error {
-	s, err := buildServer(ctx, cfg, name)
+func runWithTransport(ctx context.Context, cfg *config.Config, logger *zap.Logger, t mcpsdk.Transport, name string) error {
+	s, err := buildServer(ctx, cfg, logger, name)
 	if err != nil {
 		return err
 	}
-	log.SetOutput(os.Stderr) // stdout is reserved for MCP protocol on stdio
-	log.Printf("organizze-mcp v%s starting on %s", mcp.Version, name)
+	logger.Info("organizze-mcp starting",
+		zap.String("version", mcp.Version),
+		zap.String("transport", name),
+	)
 	return s.Run(ctx, t)
 }
 
-func runHTTP(ctx context.Context, cfg *config.Config) error {
-	s, err := buildServer(ctx, cfg, "http")
+func runHTTP(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
+	s, err := buildServer(ctx, cfg, logger, "http")
 	if err != nil {
 		return err
 	}
@@ -113,7 +134,10 @@ func runHTTP(ctx context.Context, cfg *config.Config) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("organizze-mcp v%s listening on %s", mcp.Version, cfg.HTTPAddr)
+		logger.Info("organizze-mcp listening",
+			zap.String("version", mcp.Version),
+			zap.String("addr", cfg.HTTPAddr),
+		)
 		err := srv.ListenAndServe()
 		if !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -127,7 +151,7 @@ func runHTTP(ctx context.Context, cfg *config.Config) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("organizze-mcp: shutdown: %v", err)
+			logger.Error("shutdown failed", zap.Error(err))
 		}
 		return nil
 	case err := <-errCh:
@@ -141,7 +165,7 @@ func runHTTP(ctx context.Context, cfg *config.Config) error {
 // URL + token pair. Released artifacts ship with the URL/token baked in via
 // -ldflags; un-stamped dev builds therefore default to NoopReporter unless
 // the operator sets the env vars at runtime.
-func buildStatsReporter(ctx context.Context, transport string) stats.Reporter {
+func buildStatsReporter(ctx context.Context, logger *zap.Logger, transport string) stats.Reporter {
 	if os.Getenv("MCP_STATS_OPTOUT") != "" {
 		return stats.NoopReporter{}
 	}
@@ -150,7 +174,7 @@ func buildStatsReporter(ctx context.Context, transport string) stats.Reporter {
 	if url == "" || token == "" {
 		return stats.NoopReporter{}
 	}
-	return stats.NewHTTPReporter(ctx, url, token, mcp.Version, transport, 256, nil)
+	return stats.NewHTTPReporter(ctx, url, token, mcp.Version, transport, 256, logger)
 }
 
 func envOr(key, fallback string) string {

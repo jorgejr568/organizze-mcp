@@ -10,7 +10,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +20,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/jorgejr568/organizze-mcp/cmd/consumer/internal/handler"
 	"github.com/jorgejr568/organizze-mcp/cmd/consumer/internal/store"
@@ -34,15 +35,18 @@ const (
 )
 
 func main() {
-	dsn := mustEnv("STATS_DATABASE_URL")
-	queueURL := mustEnv("STATS_QUEUE_URL")
+	logger := mustLogger()
+	defer func() { _ = logger.Sync() }()
+
+	dsn := mustEnv(logger, "STATS_DATABASE_URL")
+	queueURL := mustEnv(logger, "STATS_QUEUE_URL")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		log.Fatalf("pgxpool.New: %v", err)
+		logger.Fatal("pgxpool.New", zap.Error(err))
 	}
 	defer pool.Close()
 
@@ -51,30 +55,46 @@ func main() {
 	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	if err := pool.Ping(pingCtx); err != nil {
 		cancel()
-		log.Fatalf("postgres ping: %v", err)
+		logger.Fatal("postgres ping", zap.Error(err))
 	}
 	cancel()
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		log.Fatalf("aws config: %v", err)
+		logger.Fatal("aws config", zap.Error(err))
 	}
 	sqsClient := sqs.NewFromConfig(cfg)
 
 	h := &handler.Handler{
 		Store: store.New(pool),
-		Log:   log.Default(),
+		Log:   logger,
 	}
 
-	log.Printf("consumer: polling %s", queueURL)
-	if err := pollLoop(ctx, sqsClient, h, queueURL); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("poll loop: %v", err)
+	logger.Info("consumer polling", zap.String("queue_url", queueURL))
+	if err := pollLoop(ctx, logger, sqsClient, h, queueURL); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Fatal("poll loop", zap.Error(err))
 	}
-	log.Print("consumer: shutdown complete")
+	logger.Info("consumer shutdown complete")
+}
+
+// mustLogger returns the production JSON logger. Container runtimes (ECS / Fargate /
+// k8s) ship stderr to their respective log aggregators, which parse JSON-encoded
+// records into structured fields.
+func mustLogger() *zap.Logger {
+	cfg := zap.NewProductionConfig()
+	cfg.OutputPaths = []string{"stderr"}
+	cfg.ErrorOutputPaths = []string{"stderr"}
+	cfg.EncoderConfig.TimeKey = "ts"
+	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	l, err := cfg.Build()
+	if err != nil {
+		panic("build logger: " + err.Error())
+	}
+	return l
 }
 
 // pollLoop is the long-running loop. Returns when ctx is cancelled.
-func pollLoop(ctx context.Context, sqsClient *sqs.Client, h *handler.Handler, queueURL string) error {
+func pollLoop(ctx context.Context, logger *zap.Logger, sqsClient *sqs.Client, h *handler.Handler, queueURL string) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -91,7 +111,7 @@ func pollLoop(ctx context.Context, sqsClient *sqs.Client, h *handler.Handler, qu
 			}
 			// Transient SQS error: log and continue. A short backoff
 			// keeps us from hammering the API if it's persistently broken.
-			log.Printf("consumer: receive failed: %v", err)
+			logger.Error("receive failed", zap.Error(err))
 			if !sleep(ctx, 2*time.Second) {
 				return ctx.Err()
 			}
@@ -124,7 +144,10 @@ func pollLoop(ctx context.Context, sqsClient *sqs.Client, h *handler.Handler, qu
 				QueueUrl:      aws.String(queueURL),
 				ReceiptHandle: m.ReceiptHandle,
 			}); err != nil {
-				log.Printf("[%s] delete failed: %v", aws.ToString(m.MessageId), err)
+				logger.Error("delete failed",
+					zap.String("message_id", aws.ToString(m.MessageId)),
+					zap.Error(err),
+				)
 			}
 		}
 		ackCancel()
@@ -154,10 +177,10 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func mustEnv(key string) string {
+func mustEnv(logger *zap.Logger, key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatalf("missing required env var %s", key)
+		logger.Fatal("missing required env var", zap.String("key", key))
 	}
 	return v
 }
