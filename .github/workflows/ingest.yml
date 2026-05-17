@@ -6,11 +6,6 @@ on:
     paths:
       - 'cmd/ingest/**'
       - '.github/workflows/ingest.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'cmd/ingest/**'
-      - '.github/workflows/ingest.yml'
   workflow_dispatch:
 
 permissions:
@@ -20,35 +15,14 @@ concurrency:
   group: ingest-${{ github.ref }}
   cancel-in-progress: false
 
+# Note: vet+test for the ingest module runs in ci.yml on every PR (the
+# module has its own go.mod, so ci.yml's root `go test ./...` doesn't
+# reach it — there's an explicit `cd cmd/ingest && go test` step instead).
+# This workflow is deploy-only: build the linux/arm64 zip and replace
+# the Lambda's code on every main push touching cmd/ingest/**.
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cmd/ingest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: cmd/ingest/go.sum
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -race -count=1 ./...
-
-      - name: Build (linux/arm64)
-        run: make build
-
   deploy:
     name: Deploy
-    needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:

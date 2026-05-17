@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Consolidated Docker image publishing into `.github/workflows/release.yml`.** All three images (`jorgejr568/organizze-mcp`, `jorgejr568/organizze-mcp-oauth`, `jorgejr568/organizze-mcp-ingestion-consumer`) are now built and pushed only on `v*` tag pushes, with the same semver tag set (`:<version>` / `:<major>.<minor>` / `:<major>` / `:latest`). Drops the previous main-push-triggered `:sha-<short>` tags — single source of truth for "what's published" is now the git tag. GitHub release notes now list pull commands for all three images.
+- **Consolidated per-module CI into `.github/workflows/ci.yml`.** The root `ci.yml` now also runs vet + race-test + build for the standalone `cmd/consumer/` and `cmd/ingest/` modules (separate go.mod files that root-level `go test ./...` cannot reach). `.github/workflows/oauth.yml` and `.github/workflows/consumer.yml` are removed; `.github/workflows/ingest.yml` keeps only its Lambda-deploy job (its test job moved to ci.yml). Net effect: every PR exercises every module in a single workflow file, and the Docker/Lambda deploy paths are the only thing the per-target workflows do.
+
 ## [0.9.1] - 2026-05-17
 
 ### Added

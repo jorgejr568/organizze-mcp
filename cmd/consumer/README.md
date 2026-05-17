@@ -55,11 +55,13 @@ schema changes.
 
 ## Deploying the image
 
-CI handles the build + push on every merge to `main` touching
-`cmd/consumer/**` (see `.github/workflows/consumer.yml`). The image is
-published to Docker Hub with tags `:latest` and `:sha-<short>`. Where you
-run it is up to you (ECS / Fargate / a VM / a k8s pod / Compose). The
-container must have:
+CI handles the build + push on every `v*` tag release (see
+`.github/workflows/release.yml`). The image is published to Docker Hub
+with semver tags: `:<version>` (e.g. `0.9.2`), `:<major>.<minor>` (`0.9`),
+`:<major>` (`0`), and `:latest`. Pull requests still vet + race-test the
+consumer module via `.github/workflows/consumer.yml` — only the publish
+step waits for a release. Where you run it is up to you (ECS / Fargate /
+a VM / a k8s pod / Compose). The container must have:
 
 - Network reach to the SQS queue (`STATS_QUEUE_URL`).
 - Network reach to Postgres (`STATS_DATABASE_URL`).
