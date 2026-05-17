@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-17
+
 ### Added
 - `.github/workflows/oauth.yml`: builds and pushes the multi-tenant OAuth binary to Docker Hub as `jorgejr568/organizze-mcp-oauth`. On every push to `main` touching `cmd/organizze-mcp-oauth/**`, `internal/**`, or the go module files, ships `:latest` + `:sha-<short>` (multi-arch amd64+arm64); on `v*` tag pushes, additionally emits semver tags (`:0.9.0`, `:0.9`, `:0`). Pull requests still run vet + race tests + the OAuth-binary build, but skip the Docker push. Mirrors the consumer-binary workflow shape. Operators using Easypanel / k8s / plain docker can now pull a published image instead of building locally.
 
