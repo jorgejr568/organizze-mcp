@@ -121,11 +121,22 @@ func run() error {
 		Transaction: usecase.NewTransactionService(organizze.NewTransactionRepository(exec)),
 	})
 
+	// Serve both MCP transports under one bearer-protected surface:
+	//   /mcp                — Streamable HTTP (current spec)
+	//   /sse + /sse/<session> — legacy SSE transport
+	// ChatGPT's MCP connector probes the SSE path first; without it the
+	// discovery step fails with `MCP_ACTION_DISCOVERY_FAILED` even though
+	// the OAuth flow itself completes.
+	getServer := func(_ *http.Request) *mcpsdk.Server { return mcpServer }
+	streamableHandler := mcpsdk.NewStreamableHTTPHandler(getServer, nil)
+	sseHandler := mcpsdk.NewSSEHandler(getServer, nil)
+
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", oauthSrv.Bearer(mcpsdk.NewStreamableHTTPHandler(
-		func(_ *http.Request) *mcpsdk.Server { return mcpServer },
-		nil,
-	)))
+	mux.Handle("/mcp", oauthSrv.Bearer(streamableHandler))
+	mux.Handle("/sse", oauthSrv.Bearer(sseHandler))
+	mux.Handle("/sse/", oauthSrv.Bearer(sseHandler))         // per-session message POSTs
+	mux.Handle("/mcp/sse", oauthSrv.Bearer(sseHandler))      // some clients probe relative to the resource
+	mux.Handle("/mcp/sse/", oauthSrv.Bearer(sseHandler))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
