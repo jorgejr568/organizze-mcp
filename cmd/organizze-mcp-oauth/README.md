@@ -24,11 +24,12 @@ docker run --rm -p 8080:8080 \
 
 ### Available image tags
 
-Published to Docker Hub by `.github/workflows/oauth.yml`:
+Published to Docker Hub by `.github/workflows/release.yml` on every `v*` tag push:
 
-- `jorgejr568/organizze-mcp-oauth:latest` — head of `main`, refreshed on every merge touching the OAuth code path.
-- `jorgejr568/organizze-mcp-oauth:sha-<short>` — pinned to a specific main commit (useful for rollbacks).
-- `jorgejr568/organizze-mcp-oauth:<version>` (e.g. `0.9.0`), `:<major>.<minor>` (`0.9`), `:<major>` (`0`) — emitted on every `v*` git-tag release.
+- `jorgejr568/organizze-mcp-oauth:<version>` (e.g. `0.9.2`)
+- `jorgejr568/organizze-mcp-oauth:<major>.<minor>` (e.g. `0.9`)
+- `jorgejr568/organizze-mcp-oauth:<major>` (e.g. `0`)
+- `jorgejr568/organizze-mcp-oauth:latest`
 
 | Env var                | Required | Purpose                                                  |
 | ---------------------- | -------- | -------------------------------------------------------- |
