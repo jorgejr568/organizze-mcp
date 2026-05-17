@@ -174,6 +174,59 @@ func TestAuthorize_POST_RejectsInvalidOrganizzCreds(t *testing.T) {
 	}
 }
 
+func TestAuthorize_GET_RejectsMissingRedirectURI(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+	q := url.Values{
+		"client_id":             {c.ID},
+		// no redirect_uri
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"S256"},
+	}
+	req := httptest.NewRequest("GET", "/oauth/authorize?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d", rec.Code)
+	}
+}
+
+func TestAuthorize_GET_RejectsMissingCodeChallenge(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+	q := url.Values{
+		"client_id":    {c.ID},
+		"redirect_uri": {c.URIs[0]},
+		// no code_challenge
+	}
+	req := httptest.NewRequest("GET", "/oauth/authorize?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d", rec.Code)
+	}
+}
+
+func TestAuthorize_GET_RejectsCodeChallengeMethodPlain(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+	q := url.Values{
+		"client_id":             {c.ID},
+		"redirect_uri":          {c.URIs[0]},
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"plain"},
+	}
+	req := httptest.NewRequest("GET", "/oauth/authorize?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d", rec.Code)
+	}
+}
+
 func TestAuthorize_GET_RejectsShortCodeChallenge(t *testing.T) {
 	srv, fs := newServerWithFakeStore(t)
 	c := seedClientRecord()

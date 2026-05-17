@@ -259,6 +259,76 @@ func TestVerifyPKCE_RejectsOutOfRangeVerifier(t *testing.T) {
 	}
 }
 
+func TestToken_AuthorizationCode_ConcurrentConsume_OnlyOneSucceeds(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, c.ID, verifier)
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {c.URIs[0]},
+		"client_id":     {c.ID},
+		"code_verifier": {verifier},
+	}
+	var success, failure atomic.Int32
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if postForm(srv, form).Code == http.StatusOK {
+				success.Add(1)
+			} else {
+				failure.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if success.Load() != 1 {
+		t.Fatalf("expected exactly 1 success, got %d (failures: %d)", success.Load(), failure.Load())
+	}
+}
+
+func TestToken_RefreshGrant_ExpiredReturnsInvalidGrantNoFamilyRevoke(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+
+	// Seed an expired refresh token + an unrelated live refresh in the same family.
+	otherRefreshHash := storage.HashToken("other-refresh")
+	_ = fs.CreateToken(context.Background(), storage.Token{
+		TokenHash: otherRefreshHash, Kind: "refresh", ClientID: c.ID, UserID: 1,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	expiredHash := storage.HashToken("expired-refresh")
+	_ = fs.CreateToken(context.Background(), storage.Token{
+		TokenHash: expiredHash, Kind: "refresh", ClientID: c.ID, UserID: 1,
+		ExpiresAt: time.Now().Add(-time.Hour),
+	})
+
+	rec := postForm(srv, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {"expired-refresh"},
+		"client_id":     {c.ID},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	// The unrelated live refresh must still be usable — expiry MUST NOT
+	// trigger family revocation, only genuine reuse-of-revoked does.
+	other, _ := fs.GetToken(context.Background(), otherRefreshHash)
+	if other.RevokedAt != nil {
+		t.Error("unrelated live refresh was revoked when expired refresh was replayed")
+	}
+}
+
 func TestToken_RefreshGrant_GarbageDoesNotKillFamily(t *testing.T) {
 	srv, fs := newServerWithFakeStore(t)
 	srv.cfg.Cipher = mustTestCipher(t)

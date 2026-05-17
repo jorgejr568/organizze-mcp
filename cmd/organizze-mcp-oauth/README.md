@@ -27,7 +27,7 @@ docker run --rm -p 8080:8080 \
 | `OAUTH_DATABASE_URL`   | yes      | libpq URI for the OAuth Postgres                          |
 | `OAUTH_PUBLIC_URL`     | yes      | Externally reachable origin (no trailing slash, HTTPS)    |
 | `OAUTH_ENCRYPTION_KEY` | yes      | Hex-encoded 32 bytes; AES-GCM key for the Organizze API key column |
-| `OAUTH_COOKIE_SECRET`  | yes      | HMAC secret for the browser session cookie (>= 32 ASCII bytes; the `openssl rand -hex 32` example produces 64 chars, fine) |
+| `OAUTH_COOKIE_SECRET`  | yes      | HMAC secret for the authorize-flow consent binding and (future) browser session cookie. Length is measured in raw bytes — minimum 32; the `openssl rand -hex 32` example produces 64 ASCII chars and is sufficient. Rotating invalidates in-flight authorize forms ("bad signature" on POST) but does not affect already-issued tokens. |
 | `MCP_HTTP_ADDR`        | no       | Listen address, default `:8080`                          |
 | `ORGANIZZE_BASE_URL`   | no       | Override Organizze API base                              |
 | `ORGANIZZE_LOG_REQUESTS` | no     | Set to `1` to log every outbound Organizze request/response to stderr. Authorization header is redacted. |
@@ -44,7 +44,7 @@ browser tab. Enter the Organizze email + API key + user-agent string and
 approve. The server validates the credentials against the live Organizze
 API before storing them.
 
-> **Known limitation:** the consent form re-prompts for credentials on every authorize flow today — session cookies and one-click re-authorize are scaffolded (`internal/oauth/server/session.go`) but not yet wired into the handler. Track [issue / future task] to enable session-backed silent re-authorize.
+> **Known limitation:** the consent form re-prompts for credentials on every authorize flow today — session cookies and one-click re-authorize are scaffolded (`internal/oauth/server/session.go`) but not yet wired into the handler. The CSRF and consent-tamper concerns this would otherwise raise are addressed via an HMAC-signed consent binding (`OAUTH_COOKIE_SECRET`-keyed, 10-minute TTL); see `internal/oauth/server/consent.go`. Track [issue / future task] to enable session-backed silent re-authorize.
 
 ## Operations
 
@@ -52,7 +52,9 @@ API before storing them.
   a one-off Go program that opens each `oauth_users` row with the old key
   and re-seals with the new. Bumping `OAUTH_ENCRYPTION_KEY` alone will make
   every stored `api_key` undecryptable — back up the key.
-- **Migrations.** Applied automatically at startup. To run manually:
+- **Migrations.** Applied automatically at startup; each applied file is
+  recorded in the `schema_migrations` ledger table so re-runs are no-ops
+  even for non-idempotent statements. To run manually:
   `OAUTH_DATABASE_URL=... make oauth-migrate-up`.
 - **Revoking a user.** `DELETE FROM oauth_users WHERE organizze_email = '…';`
   cascades to sessions, codes, and tokens.
