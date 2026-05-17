@@ -47,6 +47,24 @@ jobs:
       - name: Build (OAuth multi-tenant)
         run: go build -o /dev/null ./cmd/organizze-mcp-oauth
 
+      # cmd/consumer and cmd/ingest are separate go modules — root-level
+      # `go test ./...` does NOT descend into them, so we run them
+      # explicitly here. Both are quick (no DB, no network) so paying
+      # for them on every PR is cheaper than a separate workflow file.
+      - name: Test (consumer module)
+        working-directory: cmd/consumer
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+          go build -o /dev/null ./...
+
+      - name: Test (ingest module)
+        working-directory: cmd/ingest
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+          go build -o /dev/null ./...
+
       - name: Upload coverage artifact
         if: success()
         uses: actions/upload-artifact@v7
