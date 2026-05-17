@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -131,16 +132,33 @@ func run() error {
 	streamableHandler := mcpsdk.NewStreamableHTTPHandler(getServer, nil)
 	sseHandler := mcpsdk.NewSSEHandler(getServer, nil)
 
+	bearerSSE := oauthSrv.Bearer(sseHandler)
+
+	// Root dispatcher: if the request looks like an MCP SSE probe (GET with
+	// Accept: text/event-stream — or any POST against a `?sessionid=` URL),
+	// route to the SSE handler. Otherwise fall through to OAuth + .well-known
+	// + the original 404 surface. ChatGPT's connector probes the *URL the
+	// user typed*, which is frequently the bare origin "/" — without this
+	// dispatch the probe hits a Go-mux 404 and the connector aborts even
+	// when the OAuth flow itself completes.
+	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" && looksLikeSSEProbe(r) {
+			bearerSSE.ServeHTTP(w, r)
+			return
+		}
+		oauthSrv.ServeHTTP(w, r)
+	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", oauthSrv.Bearer(streamableHandler))
-	mux.Handle("/sse", oauthSrv.Bearer(sseHandler))
-	mux.Handle("/sse/", oauthSrv.Bearer(sseHandler))         // per-session message POSTs
-	mux.Handle("/mcp/sse", oauthSrv.Bearer(sseHandler))      // some clients probe relative to the resource
-	mux.Handle("/mcp/sse/", oauthSrv.Bearer(sseHandler))
+	mux.Handle("/sse", bearerSSE)
+	mux.Handle("/sse/", bearerSSE)         // per-session message POSTs (advertised endpoint)
+	mux.Handle("/mcp/sse", bearerSSE)      // clients that probe relative to the resource URL
+	mux.Handle("/mcp/sse/", bearerSSE)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.Handle("/", oauthSrv) // OAuth + .well-known routes
+	mux.Handle("/", rootHandler)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -170,6 +188,26 @@ func run() error {
 		return nil
 	case err := <-errCh:
 		return err
+	}
+}
+
+// looksLikeSSEProbe heuristically identifies the requests an MCP SSE client
+// would send. A GET asking for text/event-stream is the canonical probe; a
+// POST carrying a sessionid is the messages-back channel for an open SSE
+// session. Everything else falls through to OAuth/well-known/etc.
+func looksLikeSSEProbe(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet:
+		for _, v := range r.Header.Values("Accept") {
+			if strings.Contains(strings.ToLower(v), "text/event-stream") {
+				return true
+			}
+		}
+		return false
+	case http.MethodPost:
+		return r.URL.Query().Get("sessionid") != ""
+	default:
+		return false
 	}
 }
 
