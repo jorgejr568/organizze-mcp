@@ -86,6 +86,7 @@ func buildServer(ctx context.Context, cfg *config.Config, logger *zap.Logger, tr
 
 	deps := mcp.Dependencies{
 		Reporter:    buildStatsReporter(ctx, logger, transport),
+		Logger:      logger,
 		User:        usecase.NewUserService(organizze.NewUserRepository(exec)),
 		Account:     usecase.NewAccountService(organizze.NewAccountRepository(exec)),
 		Category:    usecase.NewCategoryService(organizze.NewCategoryRepository(exec)),

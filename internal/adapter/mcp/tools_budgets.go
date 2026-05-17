@@ -6,7 +6,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
-	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 type BudgetService interface {
@@ -32,8 +31,8 @@ func listBudgetsHandler(svc BudgetService) mcpsdk.ToolHandlerFor[ListBudgetsInpu
 	}
 }
 
-func registerBudgetTools(s *mcpsdk.Server, r stats.Reporter, svc BudgetService) {
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+func registerBudgetTools(s *mcpsdk.Server, inst instrumentation, svc BudgetService) {
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "list_budgets",
 		Description: "List Organizze budgets. With no args, returns the current month. Provide year for an annual view, or year+month for a specific month.",
 	}, listBudgetsHandler(svc))

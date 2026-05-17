@@ -112,6 +112,7 @@ func run() error {
 
 	mcpServer := mcp.New(mcp.Dependencies{
 		Reporter:    stats.NoopReporter{},
+		Logger:      logger,
 		User:        usecase.NewUserService(organizze.NewUserRepository(exec)),
 		Account:     usecase.NewAccountService(organizze.NewAccountRepository(exec)),
 		Category:    usecase.NewCategoryService(organizze.NewCategoryRepository(exec)),
