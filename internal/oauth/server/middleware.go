@@ -15,12 +15,14 @@ func (s *Server) Bearer(next http.Handler) http.Handler {
 	challenge := `Bearer resource_metadata="` + s.cfg.PublicURL + `/.well-known/oauth-protected-resource"`
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := r.Header.Get("Authorization")
-		if !strings.HasPrefix(raw, "Bearer ") {
+		// RFC 6750 §2.1 — the scheme is case-insensitive.
+		const schemeLen = len("bearer ")
+		if len(raw) <= schemeLen || !strings.EqualFold(raw[:schemeLen], "Bearer ") {
 			w.Header().Set("WWW-Authenticate", challenge)
 			http.Error(w, "missing bearer", http.StatusUnauthorized)
 			return
 		}
-		token := strings.TrimPrefix(raw, "Bearer ")
+		token := raw[schemeLen:]
 		tok, err := s.cfg.Store.GetToken(r.Context(), storage.HashToken(token))
 		if err != nil || tok.Kind != "access" || tok.RevokedAt != nil || tok.ExpiresAt.Before(s.cfg.Now()) {
 			w.Header().Set("WWW-Authenticate", challenge)

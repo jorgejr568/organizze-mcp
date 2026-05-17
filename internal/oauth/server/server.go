@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 
 	"github.com/jorgejr568/organizze-mcp/internal/oauth/storage"
 )
@@ -56,8 +57,9 @@ type Config struct {
 
 // Server is the http.Handler implementation.
 type Server struct {
-	cfg Config
-	mux *http.ServeMux
+	cfg         Config
+	mux         *http.ServeMux
+	dcrLimiter  *ipRateLimiter
 }
 
 // New constructs a Server with all routes mounted.
@@ -79,7 +81,14 @@ func New(cfg Config) *Server {
 		cfg.Logger = zap.NewNop()
 	}
 	cfg.Logger = cfg.Logger.Named("oauth")
-	s := &Server{cfg: cfg, mux: http.NewServeMux()}
+	s := &Server{
+		cfg: cfg,
+		mux: http.NewServeMux(),
+		// DCR is an unauthenticated write surface — cap each source IP at
+		// 10 registrations per minute (burst 10). The 10_000-IP cap bounds
+		// memory in case a real bot fans out across a /24.
+		dcrLimiter: newIPRateLimiter(rate.Every(6*time.Second), 10, 10_000),
+	}
 	s.routes()
 	return s
 }

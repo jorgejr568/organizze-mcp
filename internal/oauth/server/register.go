@@ -37,6 +37,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "POST required")
 		return
 	}
+	if !s.dcrLimiter.allow(clientIP(r)) {
+		writeOAuthError(w, http.StatusTooManyRequests, "rate_limited", "too many client registrations from this IP")
+		return
+	}
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "malformed JSON")

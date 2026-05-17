@@ -65,6 +65,50 @@ func TestBearer_HappyPath_InjectsCredentials(t *testing.T) {
 	}
 }
 
+func TestBearer_AcceptsLowercaseScheme(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	cipher, nonce, _ := srv.cfg.Cipher.Seal([]byte("k"))
+	user, _ := fs.UpsertUserByEmail(context.Background(), storage.User{
+		OrganizzeEmail: "u@x.com", APIKeyCipher: cipher, APIKeyNonce: nonce, UserAgent: "UA",
+	})
+	_ = fs.CreateToken(context.Background(), storage.Token{
+		TokenHash: storage.HashToken("tok-lower"), Kind: "access", ClientID: "cli", UserID: user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	req := httptest.NewRequest("GET", "/mcp", nil)
+	req.Header.Set("Authorization", "bearer tok-lower") // lowercase scheme
+	rec := httptest.NewRecorder()
+	srv.Bearer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("lowercase bearer status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBearer_RejectsRefreshKindToken(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	cipher, nonce, _ := srv.cfg.Cipher.Seal([]byte("k"))
+	user, _ := fs.UpsertUserByEmail(context.Background(), storage.User{
+		OrganizzeEmail: "u@x.com", APIKeyCipher: cipher, APIKeyNonce: nonce, UserAgent: "UA",
+	})
+	_ = fs.CreateToken(context.Background(), storage.Token{
+		TokenHash: storage.HashToken("refresh-as-bearer"), Kind: "refresh", ClientID: "cli", UserID: user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	req := httptest.NewRequest("GET", "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer refresh-as-bearer")
+	rec := httptest.NewRecorder()
+	srv.Bearer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("next should not be called for refresh-kind token")
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d", rec.Code)
+	}
+}
+
 func TestBearer_RejectsRevokedToken(t *testing.T) {
 	srv, fs := newServerWithFakeStore(t)
 	srv.cfg.Cipher = mustTestCipher(t)

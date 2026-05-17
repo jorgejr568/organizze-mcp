@@ -66,3 +66,25 @@ func TestRegister_RejectsNonHTTPSRedirect(t *testing.T) {
 		t.Errorf("status = %d", rec.Code)
 	}
 }
+
+func TestRegister_RateLimitedAfterBurst(t *testing.T) {
+	srv, _ := newServerWithFakeStore(t)
+	body := `{"client_name":"x","redirect_uris":["https://app.example.com/cb"]}`
+	var created, ratelimited int
+	for i := 0; i < 30; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/oauth/register", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "1.2.3.4:12345"
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		switch rec.Code {
+		case http.StatusCreated:
+			created++
+		case http.StatusTooManyRequests:
+			ratelimited++
+		}
+	}
+	if created == 0 || ratelimited == 0 {
+		t.Fatalf("expected mix: created=%d 429=%d", created, ratelimited)
+	}
+}
