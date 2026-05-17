@@ -57,9 +57,10 @@ type Config struct {
 
 // Server is the http.Handler implementation.
 type Server struct {
-	cfg         Config
-	mux         *http.ServeMux
-	dcrLimiter  *ipRateLimiter
+	cfg        Config
+	mux        *http.ServeMux
+	dcrLimiter *ipRateLimiter
+	sessions   *sessionManager
 }
 
 // New constructs a Server with all routes mounted.
@@ -88,6 +89,12 @@ func New(cfg Config) *Server {
 		// 10 registrations per minute (burst 10). The 10_000-IP cap bounds
 		// memory in case a real bot fans out across a /24.
 		dcrLimiter: newIPRateLimiter(rate.Every(6*time.Second), 10, 10_000),
+		// Browser-session cookies let a returning user skip re-entering their
+		// Organizze credentials on subsequent authorize flows. Cookie TTL
+		// mirrors the SessionTTL setting; server-side oauth_sessions rows
+		// gate expiry independently so a leaked cookie cannot be replayed
+		// once the DB row is gone.
+		sessions: newSessionManager(cfg.CookieSecret, cfg.SessionTTL),
 	}
 	s.routes()
 	return s

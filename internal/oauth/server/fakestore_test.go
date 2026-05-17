@@ -93,16 +93,31 @@ func (f *fakeStore) GetUserByEmail(_ context.Context, e string) (storage.User, e
 	return storage.User{}, storage.ErrNotFound
 }
 
-func (f *fakeStore) CreateSession(context.Context, storage.Session) error {
-	panic("fakeStore.CreateSession not implemented yet")
+func (f *fakeStore) CreateSession(_ context.Context, sess storage.Session) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if sess.CreatedAt.IsZero() {
+		sess.CreatedAt = time.Now().UTC()
+	}
+	f.sessions[sess.ID] = sess
+	return nil
 }
 
-func (f *fakeStore) GetSession(context.Context, string) (storage.Session, error) {
-	panic("fakeStore.GetSession not implemented yet")
+func (f *fakeStore) GetSession(_ context.Context, id string) (storage.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sess, ok := f.sessions[id]
+	if !ok || sess.ExpiresAt.Before(time.Now()) {
+		return storage.Session{}, storage.ErrNotFound
+	}
+	return sess, nil
 }
 
-func (f *fakeStore) DeleteSession(context.Context, string) error {
-	panic("fakeStore.DeleteSession not implemented yet")
+func (f *fakeStore) DeleteSession(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.sessions, id)
+	return nil
 }
 
 func (f *fakeStore) CreateAuthCode(_ context.Context, ac storage.AuthCode) error {

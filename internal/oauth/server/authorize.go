@@ -10,7 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/jorgejr568/organizze-mcp/internal/oauth/storage"
 )
@@ -19,6 +22,11 @@ import (
 var loginFS embed.FS
 
 var loginTpl = template.Must(template.ParseFS(loginFS, "templates/login.html"))
+
+type sessionUserView struct {
+	Email   string
+	Initial string
+}
 
 type loginViewModel struct {
 	ClientID            string
@@ -29,6 +37,15 @@ type loginViewModel struct {
 	CodeChallengeMethod string
 	ConsentToken        string
 	Error               string
+
+	// SessionUser is populated when a valid browser-session cookie identifies
+	// a previously-authorized user. The template renders a "Continue as X"
+	// shortcut instead of the full credential form.
+	SessionUser *sessionUserView
+
+	// RawQuery is the GET query string (with `reset` stripped) so the
+	// "Switch user" link can preserve the original OAuth params.
+	RawQuery string
 }
 
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -51,13 +68,25 @@ func (s *Server) authorizeGET(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	vm.ConsentToken = signConsent(s.cfg.CookieSecret, consentBinding{
-		ClientID:    vm.ClientID,
-		RedirectURI: vm.RedirectURI,
-		Challenge:   vm.CodeChallenge,
-		State:       vm.State,
-		IssuedAt:    s.cfg.Now().Unix(),
-	})
+
+	// `?reset=1` is the "switch user" link target. Drop the session row + cookie
+	// before rendering so the fresh form has no SessionUser context.
+	if r.URL.Query().Get("reset") == "1" {
+		s.clearBrowserSession(w, r)
+	} else if user, ok := s.lookupBrowserSession(r); ok {
+		vm.SessionUser = &sessionUserView{
+			Email:   user.OrganizzeEmail,
+			Initial: firstInitial(user.OrganizzeEmail),
+		}
+	}
+
+	// RawQuery for the "Switch user" link — strip `reset` so we don't render
+	// a duplicate when the user is already on a reset URL.
+	q := r.URL.Query()
+	q.Del("reset")
+	vm.RawQuery = q.Encode()
+
+	vm.ConsentToken = s.issueConsentToken(vm)
 	renderLogin(w, vm)
 }
 
@@ -88,11 +117,39 @@ func (s *Server) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Skip-fill path: when use_session=1 is set we trust the browser cookie
+	// to identify the returning user instead of re-prompting for the API key.
+	// Stored credentials are re-validated against Organizze in case the key
+	// was revoked since storage.
+	if r.PostForm.Get("use_session") == "1" {
+		if user, ok := s.lookupBrowserSession(r); ok {
+			apiKey, err := s.cfg.Cipher.Open(user.APIKeyCipher, user.APIKeyNonce)
+			if err != nil {
+				http.Error(w, "server_error", http.StatusInternalServerError)
+				return
+			}
+			if err := s.cfg.ValidateOrganizze(r.Context(), user.OrganizzeEmail, string(apiKey), user.UserAgent); err != nil {
+				// Stored key no longer works — fall back to the full form.
+				vm.Error = "Suas credenciais Organizze salvas não funcionam mais. Entre novamente."
+				vm.RawQuery = r.URL.RawQuery
+				vm.ConsentToken = s.issueConsentToken(vm)
+				renderLogin(w, vm)
+				return
+			}
+			s.completeAuthorize(w, r, vm, user)
+			return
+		}
+		// Cookie missing/invalid — silently fall through to the full form so
+		// the user can re-authenticate without a confusing "session expired"
+		// message. They'll see the normal form with all fields blank.
+	}
+
 	email := r.PostForm.Get("email")
 	apiKey := r.PostForm.Get("api_key")
 	userAgent := r.PostForm.Get("user_agent")
 	if email == "" || apiKey == "" || userAgent == "" {
-		vm.Error = "All fields are required."
+		vm.Error = "Todos os campos são obrigatórios."
 		vm.ConsentToken = s.issueConsentToken(vm)
 		renderLogin(w, vm)
 		return
@@ -102,7 +159,7 @@ func (s *Server) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		// Re-render the form with the error so the human can retry. Status
 		// stays 200 — the form is the response body. Re-issue the consent
 		// token so the user has a fresh 10-min window to fix the error.
-		vm.Error = "Invalid Organizze credentials: " + err.Error()
+		vm.Error = "Credenciais Organizze inválidas: " + err.Error()
 		vm.ConsentToken = s.issueConsentToken(vm)
 		renderLogin(w, vm)
 		return
@@ -123,7 +180,13 @@ func (s *Server) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server_error", http.StatusInternalServerError)
 		return
 	}
+	s.completeAuthorize(w, r, vm, user)
+}
 
+// completeAuthorize is the tail shared by the full-form path and the
+// skip-fill path. It mints the authorization code, writes a fresh browser
+// session, and 303-redirects back to the OAuth client.
+func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, vm loginViewModel, user storage.User) {
 	code := newRandomToken()
 	if err := s.cfg.Store.CreateAuthCode(r.Context(), storage.AuthCode{
 		CodeHash:            storage.HashToken(code),
@@ -137,9 +200,58 @@ func (s *Server) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server_error", http.StatusInternalServerError)
 		return
 	}
-
+	s.writeBrowserSession(w, r, user.ID)
 	q := url.Values{"code": {code}, "state": {vm.State}}
 	http.Redirect(w, r, vm.RedirectURI+"?"+q.Encode(), http.StatusSeeOther)
+}
+
+// lookupBrowserSession reads the session cookie, validates it against the
+// stored oauth_sessions row, and returns the associated user. Any failure
+// path (missing cookie, bad signature, expired row, deleted user) returns
+// ok=false silently — the caller falls back to the full credential form.
+func (s *Server) lookupBrowserSession(r *http.Request) (storage.User, bool) {
+	sessionID, ok := s.sessions.read(r)
+	if !ok {
+		return storage.User{}, false
+	}
+	sess, err := s.cfg.Store.GetSession(r.Context(), sessionID)
+	if err != nil {
+		return storage.User{}, false
+	}
+	user, err := s.cfg.Store.GetUser(r.Context(), sess.UserID)
+	if err != nil {
+		return storage.User{}, false
+	}
+	return user, true
+}
+
+// writeBrowserSession mints a new session row + signed cookie. Old session
+// rows for the same user are left in place (cheap, expires naturally); the
+// cookie is rotated on every authorize success so a leaked cookie has a
+// bounded replay window.
+func (s *Server) writeBrowserSession(w http.ResponseWriter, r *http.Request, userID int64) {
+	id := newRandomToken()
+	if err := s.cfg.Store.CreateSession(r.Context(), storage.Session{
+		ID:        id,
+		UserID:    userID,
+		ExpiresAt: s.cfg.Now().Add(s.cfg.SessionTTL),
+	}); err != nil {
+		// Logging is best-effort; the OAuth flow still completes without a
+		// session cookie — the user just sees the full form next time.
+		s.cfg.Logger.Warn("write browser session", zap.Error(err))
+		return
+	}
+	s.sessions.write(w, id)
+}
+
+// clearBrowserSession deletes the DB row referenced by the current cookie
+// (if any) and clears the cookie at the client. Always invoked from the
+// `?reset=1` GET path.
+func (s *Server) clearBrowserSession(w http.ResponseWriter, r *http.Request) {
+	if sessionID, ok := s.sessions.read(r); ok {
+		_ = s.cfg.Store.DeleteSession(r.Context(), sessionID)
+	}
+	s.sessions.clear(w)
 }
 
 // parseAuthorizeParams validates the OAuth params and returns a populated
@@ -213,6 +325,16 @@ func newRandomToken() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// firstInitial returns the first non-empty character of email, uppercased.
+// Used for the avatar bubble in the skip-fill view. Falls back to "?" for
+// the impossible empty case.
+func firstInitial(email string) string {
+	for _, r := range email {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }
 
 // isBase64URLNoPad reports whether s is exactly n base64url chars
