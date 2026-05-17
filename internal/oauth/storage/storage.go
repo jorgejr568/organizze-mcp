@@ -51,6 +51,7 @@ type Token struct {
 	ClientID   string
 	UserID     int64
 	RefreshFor []byte // for access tokens: hash of the issuing refresh token; nil otherwise
+	CodeHash   []byte // set on tokens issued from an authorization-code grant; nil on refresh-grant
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
@@ -81,6 +82,14 @@ type Store interface {
 	// Tokens
 	CreateToken(ctx context.Context, tok Token) error
 	GetToken(ctx context.Context, tokenHash []byte) (Token, error)
+	// RotateRefreshToken atomically marks the refresh token revoked, IFF it is
+	// currently un-revoked and un-expired, returning the row. Two concurrent
+	// callers see at most one success — the loser receives ErrNotFound and
+	// must treat the second-use as a reuse-attack signal (handler-side).
+	RotateRefreshToken(ctx context.Context, refreshHash []byte) (Token, error)
 	RevokeToken(ctx context.Context, tokenHash []byte) error
 	RevokeRefreshFamily(ctx context.Context, refreshHash []byte) error
+	// RevokeFamilyByCode revokes every still-live token whose CodeHash matches.
+	// Called on auth-code replay (RFC 6749 §10.5 / Security BCP §4.10).
+	RevokeFamilyByCode(ctx context.Context, codeHash []byte) error
 }

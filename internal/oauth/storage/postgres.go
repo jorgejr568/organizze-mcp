@@ -163,20 +163,44 @@ RETURNING code_hash, client_id, user_id, redirect_uri, code_challenge, code_chal
 
 func (s *Postgres) CreateToken(ctx context.Context, tok Token) error {
 	const q = `
-INSERT INTO oauth_tokens (token_hash, kind, client_id, user_id, refresh_for, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO oauth_tokens (token_hash, kind, client_id, user_id, refresh_for, code_hash, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
-	if _, err := s.pool.Exec(ctx, q, tok.TokenHash, tok.Kind, tok.ClientID, tok.UserID, tok.RefreshFor, tok.ExpiresAt); err != nil {
+	if _, err := s.pool.Exec(ctx, q, tok.TokenHash, tok.Kind, tok.ClientID, tok.UserID, tok.RefreshFor, tok.CodeHash, tok.ExpiresAt); err != nil {
 		return fmt.Errorf("oauth/storage: create token: %w", err)
 	}
 	return nil
 }
 
 func (s *Postgres) GetToken(ctx context.Context, tokenHash []byte) (Token, error) {
-	const q = `SELECT token_hash, kind, client_id, user_id, refresh_for, expires_at, revoked_at, created_at FROM oauth_tokens WHERE token_hash = $1`
+	const q = `SELECT token_hash, kind, client_id, user_id, refresh_for, code_hash, expires_at, revoked_at, created_at FROM oauth_tokens WHERE token_hash = $1`
 	row := s.pool.QueryRow(ctx, q, tokenHash)
 	var t Token
-	if err := row.Scan(&t.TokenHash, &t.Kind, &t.ClientID, &t.UserID, &t.RefreshFor, &t.ExpiresAt, &t.RevokedAt, &t.CreatedAt); err != nil {
+	if err := row.Scan(&t.TokenHash, &t.Kind, &t.ClientID, &t.UserID, &t.RefreshFor, &t.CodeHash, &t.ExpiresAt, &t.RevokedAt, &t.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Token{}, ErrNotFound
+		}
+		return Token{}, err
+	}
+	return t, nil
+}
+
+// RotateRefreshToken atomically marks the refresh row revoked when it is
+// currently un-revoked and un-expired. Concurrent callers race on the same
+// UPDATE — the loser sees ErrNotFound.
+func (s *Postgres) RotateRefreshToken(ctx context.Context, refreshHash []byte) (Token, error) {
+	const q = `
+UPDATE oauth_tokens
+   SET revoked_at = NOW()
+ WHERE token_hash = $1
+   AND kind = 'refresh'
+   AND revoked_at IS NULL
+   AND expires_at > NOW()
+RETURNING token_hash, kind, client_id, user_id, refresh_for, code_hash, expires_at, revoked_at, created_at
+`
+	row := s.pool.QueryRow(ctx, q, refreshHash)
+	var t Token
+	if err := row.Scan(&t.TokenHash, &t.Kind, &t.ClientID, &t.UserID, &t.RefreshFor, &t.CodeHash, &t.ExpiresAt, &t.RevokedAt, &t.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Token{}, ErrNotFound
 		}
@@ -204,6 +228,16 @@ WHERE revoked_at IS NULL
 `
 	if _, err := s.pool.Exec(ctx, q, refreshHash); err != nil {
 		return fmt.Errorf("oauth/storage: revoke refresh family: %w", err)
+	}
+	return nil
+}
+
+// RevokeFamilyByCode revokes every still-live token issued from the given
+// authorization code. Called on code replay.
+func (s *Postgres) RevokeFamilyByCode(ctx context.Context, codeHash []byte) error {
+	const q = `UPDATE oauth_tokens SET revoked_at = NOW() WHERE code_hash = $1 AND revoked_at IS NULL`
+	if _, err := s.pool.Exec(ctx, q, codeHash); err != nil {
+		return fmt.Errorf("oauth/storage: revoke family by code: %w", err)
 	}
 	return nil
 }

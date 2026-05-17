@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,13 +78,13 @@ func TestToken_AuthorizationCode_RejectsWrongVerifier(t *testing.T) {
 	srv.cfg.Cipher = mustTestCipher(t)
 	c := seedClientRecord()
 	_ = fs.CreateClient(context.Background(), storageClient(c))
-	code, _ := issueCode(t, fs, c.ID, "right-verifier-that-is-long-enough-12345")
+	code, _ := issueCode(t, fs, c.ID, "right-verifier-that-is-long-enough-123456789")
 	rec := postForm(srv, url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"redirect_uri":  {c.URIs[0]},
 		"client_id":     {c.ID},
-		"code_verifier": {"wrong-verifier-that-is-long-enough-12345"},
+		"code_verifier": {"wrong-verifier-that-is-long-enough-123456789"},
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d", rec.Code)
@@ -94,7 +96,7 @@ func TestToken_AuthorizationCode_SingleUse(t *testing.T) {
 	srv.cfg.Cipher = mustTestCipher(t)
 	c := seedClientRecord()
 	_ = fs.CreateClient(context.Background(), storageClient(c))
-	verifier := "verifier-that-is-long-enough-1234567890123"
+	verifier := "verifier-that-is-long-enough-12345678901234567"
 	code, _ := issueCode(t, fs, c.ID, verifier)
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
@@ -116,7 +118,7 @@ func TestToken_RefreshGrant_Rotates(t *testing.T) {
 	srv.cfg.Cipher = mustTestCipher(t)
 	c := seedClientRecord()
 	_ = fs.CreateClient(context.Background(), storageClient(c))
-	verifier := "verifier-that-is-long-enough-1234567890123"
+	verifier := "verifier-that-is-long-enough-12345678901234567"
 	code, _ := issueCode(t, fs, c.ID, verifier)
 	rec := postForm(srv, url.Values{
 		"grant_type":    {"authorization_code"},
@@ -153,12 +155,116 @@ func TestToken_RefreshGrant_Rotates(t *testing.T) {
 	}
 }
 
+func TestToken_RefreshGrant_ConcurrentRotation_OnlyOneSucceeds(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, c.ID, verifier)
+	rec := postForm(srv, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {c.URIs[0]},
+		"client_id":     {c.ID},
+		"code_verifier": {verifier},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("seed exchange status = %d", rec.Code)
+	}
+	var pair map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &pair)
+	refresh := pair["refresh_token"].(string)
+
+	var success, failure atomic.Int32
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			r := postForm(srv, url.Values{
+				"grant_type":    {"refresh_token"},
+				"refresh_token": {refresh},
+				"client_id":     {c.ID},
+			})
+			if r.Code == http.StatusOK {
+				success.Add(1)
+			} else {
+				failure.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if success.Load() != 1 {
+		t.Fatalf("expected exactly 1 success, got %d (failures: %d)", success.Load(), failure.Load())
+	}
+}
+
+func TestToken_AuthorizationCode_Replay_RevokesFamily(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	c := seedClientRecord()
+	_ = fs.CreateClient(context.Background(), storageClient(c))
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, c.ID, verifier)
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {c.URIs[0]},
+		"client_id":     {c.ID},
+		"code_verifier": {verifier},
+	}
+	rec := postForm(srv, form)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first exchange status = %d", rec.Code)
+	}
+	var pair map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &pair)
+	accessHash := storage.HashToken(pair["access_token"].(string))
+	refreshHash := storage.HashToken(pair["refresh_token"].(string))
+
+	// Replay: must fail AND must revoke both tokens issued from the code.
+	rec2 := postForm(srv, form)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("replay status = %d, want 400", rec2.Code)
+	}
+	access, _ := fs.GetToken(context.Background(), accessHash)
+	if access.RevokedAt == nil {
+		t.Errorf("access token not revoked after code replay")
+	}
+	refresh, _ := fs.GetToken(context.Background(), refreshHash)
+	if refresh.RevokedAt == nil {
+		t.Errorf("refresh token not revoked after code replay")
+	}
+}
+
+func TestVerifyPKCE_RejectsOutOfRangeVerifier(t *testing.T) {
+	short := strings.Repeat("a", 42)
+	okLen := strings.Repeat("a", 43)
+	long := strings.Repeat("a", 129)
+	sum := sha256.Sum256([]byte(okLen))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+
+	if verifyPKCE(short, challenge) {
+		t.Error("expected reject on 42-char verifier")
+	}
+	if verifyPKCE(long, challenge) {
+		t.Error("expected reject on 129-char verifier")
+	}
+	if !verifyPKCE(okLen, challenge) {
+		t.Error("expected accept on 43-char verifier")
+	}
+}
+
 func TestToken_RefreshGrant_GarbageDoesNotKillFamily(t *testing.T) {
 	srv, fs := newServerWithFakeStore(t)
 	srv.cfg.Cipher = mustTestCipher(t)
 	c := seedClientRecord()
 	_ = fs.CreateClient(context.Background(), storageClient(c))
-	verifier := "verifier-that-is-long-enough-1234567890123"
+	verifier := "verifier-that-is-long-enough-12345678901234567"
 	code, _ := issueCode(t, fs, c.ID, verifier)
 
 	// Mint a valid token pair.

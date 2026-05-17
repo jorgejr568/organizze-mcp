@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"time"
@@ -160,6 +161,32 @@ func (f *fakeStore) RevokeRefreshFamily(_ context.Context, h []byte) error {
 	for k, t := range f.tokens {
 		if string(t.TokenHash) == string(h) || (t.RefreshFor != nil && string(t.RefreshFor) == string(h)) {
 			now := time.Now().UTC()
+			t.RevokedAt = &now
+			f.tokens[k] = t
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) RotateRefreshToken(_ context.Context, h []byte) (storage.Token, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tok, ok := f.tokens[string(h)]
+	if !ok || tok.Kind != "refresh" || tok.RevokedAt != nil || tok.ExpiresAt.Before(time.Now()) {
+		return storage.Token{}, storage.ErrNotFound
+	}
+	now := time.Now().UTC()
+	tok.RevokedAt = &now
+	f.tokens[string(h)] = tok
+	return tok, nil
+}
+
+func (f *fakeStore) RevokeFamilyByCode(_ context.Context, codeHash []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := time.Now().UTC()
+	for k, t := range f.tokens {
+		if len(t.CodeHash) > 0 && bytes.Equal(t.CodeHash, codeHash) && t.RevokedAt == nil {
 			t.RevokedAt = &now
 			f.tokens[k] = t
 		}
