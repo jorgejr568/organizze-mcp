@@ -22,6 +22,14 @@ docker run --rm -p 8080:8080 \
   jorgejr568/organizze-mcp-oauth:latest
 ```
 
+### Available image tags
+
+Published to Docker Hub by `.github/workflows/oauth.yml`:
+
+- `jorgejr568/organizze-mcp-oauth:latest` — head of `main`, refreshed on every merge touching the OAuth code path.
+- `jorgejr568/organizze-mcp-oauth:sha-<short>` — pinned to a specific main commit (useful for rollbacks).
+- `jorgejr568/organizze-mcp-oauth:<version>` (e.g. `0.9.0`), `:<major>.<minor>` (`0.9`), `:<major>` (`0`) — emitted on every `v*` git-tag release.
+
 | Env var                | Required | Purpose                                                  |
 | ---------------------- | -------- | -------------------------------------------------------- |
 | `OAUTH_DATABASE_URL`   | yes      | libpq URI for the OAuth Postgres                          |
