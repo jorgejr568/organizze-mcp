@@ -18,7 +18,7 @@
   <p>{{.ClientName}} is requesting access to your Organizze account through this MCP server.</p>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
   <form method="POST" action="/oauth/authorize">
-    <input type="hidden" name="csrf"          value="{{.CSRF}}">
+    <input type="hidden" name="consent_token" value="{{.ConsentToken}}">
     <input type="hidden" name="client_id"     value="{{.ClientID}}">
     <input type="hidden" name="redirect_uri"  value="{{.RedirectURI}}">
     <input type="hidden" name="state"         value="{{.State}}">

@@ -27,7 +27,7 @@ type loginViewModel struct {
 	State               string
 	CodeChallenge       string
 	CodeChallengeMethod string
-	CSRF                string
+	ConsentToken        string
 	Error               string
 }
 
@@ -51,16 +51,36 @@ func (s *Server) authorizeGET(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	vm.ConsentToken = signConsent(s.cfg.CookieSecret, consentBinding{
+		ClientID:    vm.ClientID,
+		RedirectURI: vm.RedirectURI,
+		Challenge:   vm.CodeChallenge,
+		State:       vm.State,
+		IssuedAt:    s.cfg.Now().Unix(),
+	})
 	renderLogin(w, vm)
 }
 
 func (s *Server) authorizePOST(w http.ResponseWriter, r *http.Request) {
-	// TODO: validate the csrf hidden field once login-session cookies are
-	// paired with the form render. Today the template emits the field but
-	// the handler ignores it — a known limitation acceptable for the
-	// current single-user / developer-mode deployment.
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	// CSRF + tamper guard. The consent_token is an HMAC-signed binding over
+	// (client_id, redirect_uri, code_challenge, state, issued_at) rendered into
+	// the GET form. POSTed values for those fields must match the bound values
+	// — otherwise the browser was tricked into submitting a different
+	// authorization (CSRF / login-CSRF) or a tampered form.
+	binding, err := verifyConsent(s.cfg.CookieSecret, r.PostForm.Get("consent_token"), s.cfg.Now())
+	if err != nil {
+		http.Error(w, "invalid consent_token: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if r.PostForm.Get("client_id") != binding.ClientID ||
+		r.PostForm.Get("redirect_uri") != binding.RedirectURI ||
+		r.PostForm.Get("code_challenge") != binding.Challenge ||
+		r.PostForm.Get("state") != binding.State {
+		http.Error(w, "consent_token does not match POSTed params", http.StatusBadRequest)
 		return
 	}
 	vm, err := s.parseAuthorizeParams(r.Context(), r.PostForm)
@@ -73,14 +93,17 @@ func (s *Server) authorizePOST(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.PostForm.Get("user_agent")
 	if email == "" || apiKey == "" || userAgent == "" {
 		vm.Error = "All fields are required."
+		vm.ConsentToken = s.issueConsentToken(vm)
 		renderLogin(w, vm)
 		return
 	}
 
 	if err := s.cfg.ValidateOrganizze(r.Context(), email, apiKey, userAgent); err != nil {
 		// Re-render the form with the error so the human can retry. Status
-		// stays 200 — the form is the response body.
+		// stays 200 — the form is the response body. Re-issue the consent
+		// token so the user has a fresh 10-min window to fix the error.
 		vm.Error = "Invalid Organizze credentials: " + err.Error()
+		vm.ConsentToken = s.issueConsentToken(vm)
 		renderLogin(w, vm)
 		return
 	}
@@ -152,7 +175,7 @@ func (s *Server) parseAuthorizeParams(ctx context.Context, q url.Values) (loginV
 	}
 	// S256 challenge is base64url(SHA-256(verifier)) → exactly 43 chars
 	// (32 bytes encoded with RawURLEncoding, no padding).
-	if len(challenge) != 43 {
+	if !isBase64URLNoPad(challenge, 43) {
 		return loginViewModel{}, errors.New("invalid_request: code_challenge must be 43-char base64url (S256)")
 	}
 	return loginViewModel{
@@ -165,13 +188,47 @@ func (s *Server) parseAuthorizeParams(ctx context.Context, q url.Values) (loginV
 	}, nil
 }
 
+func (s *Server) issueConsentToken(vm loginViewModel) string {
+	return signConsent(s.cfg.CookieSecret, consentBinding{
+		ClientID:    vm.ClientID,
+		RedirectURI: vm.RedirectURI,
+		Challenge:   vm.CodeChallenge,
+		State:       vm.State,
+		IssuedAt:    s.cfg.Now().Unix(),
+	})
+}
+
 func renderLogin(w http.ResponseWriter, vm loginViewModel) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = loginTpl.Execute(w, vm)
+	if err := loginTpl.Execute(w, vm); err != nil {
+		// Template failures here mean the embedded template diverged from the
+		// view model — a programmer bug. The response has already been
+		// committed (headers written), so we can't issue a clean 500; surface
+		// it via the log channel that ServeHTTP wraps us with.
+		_, _ = w.Write([]byte("\n<!-- template render error: " + err.Error() + " -->"))
+	}
 }
 
 func newRandomToken() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// isBase64URLNoPad reports whether s is exactly n base64url chars
+// (A–Z, a–z, 0–9, '-', '_') with no padding. Used to validate the PKCE
+// code_challenge — RFC 7636 §4.2 mandates the URL-safe base64 alphabet
+// without padding.
+func isBase64URLNoPad(s string, n int) bool {
+	if len(s) != n {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
