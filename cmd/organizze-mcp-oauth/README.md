@@ -31,6 +31,9 @@ docker run --rm -p 8080:8080 \
 | `MCP_HTTP_ADDR`        | no       | Listen address, default `:8080`                          |
 | `ORGANIZZE_BASE_URL`   | no       | Override Organizze API base                              |
 | `ORGANIZZE_LOG_REQUESTS` | no     | Set to `1` to log every outbound Organizze request/response to stderr. Authorization header is redacted. |
+| `MCP_STATS_INGEST_URL` | no       | Function URL of the stats-ingest Lambda. Combined with `MCP_STATS_INGEST_TOKEN`, enables off-box telemetry (tool name, status, error_class, duration — never arguments or return values). Missing either env var → NoopReporter (no telemetry). |
+| `MCP_STATS_INGEST_TOKEN` | no     | Matching `X-Ingest-Token` for the ingest Lambda. Pair with `MCP_STATS_INGEST_URL`. |
+| `MCP_STATS_OPTOUT`     | no       | Set to `1` to force-disable stats even when the ingest env vars are present. |
 | `ORGANIZZE_API_KEY`    | **must NOT be set** | Single-tenant env; the binary refuses to start with it set |
 
 ## Connect from ChatGPT (Developer Mode)
