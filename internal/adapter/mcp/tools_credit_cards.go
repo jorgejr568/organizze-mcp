@@ -6,7 +6,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
-	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 type CreditCardService interface {
@@ -129,24 +128,24 @@ func deleteCreditCardHandler(svc CreditCardService) mcpsdk.ToolHandlerFor[Delete
 	}
 }
 
-func registerCreditCardTools(s *mcpsdk.Server, r stats.Reporter, svc CreditCardService) {
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+func registerCreditCardTools(s *mcpsdk.Server, inst instrumentation, svc CreditCardService) {
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "list_credit_cards",
 		Description: "List all Organizze credit cards.",
 	}, listCreditCardsHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "get_credit_card",
 		Description: "Fetch a single Organizze credit card by id.",
 	}, getCreditCardHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "create_credit_card",
 		Description: "Create a new Organizze credit card. Required: name, due_day (1-31), closing_day (1-31).",
 	}, createCreditCardHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "update_credit_card",
 		Description: "Update fields on an existing Organizze credit card. Only fields you provide are changed.",
 	}, updateCreditCardHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "delete_credit_card",
 		Description: "Permanently delete an Organizze credit card by id.",
 	}, deleteCreditCardHandler(svc))

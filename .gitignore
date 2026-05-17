@@ -1,5 +1,6 @@
 /bin/
 /organizze-mcp
+/organizze-mcp-oauth
 *.exe
 coverage.out
 coverage.html

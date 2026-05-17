@@ -15,16 +15,16 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
+	"github.com/jorgejr568/organizze-mcp/internal/oauth/credprovider"
 )
 
 func TestNewRequestExecutor_RejectsMissingRequired(t *testing.T) {
 	c := NewClient(ClientOptions{})
+	creds := credprovider.Static("e", "k", "ua")
 	cases := []RequestExecutorOptions{
-		{HTTPClient: c, Email: "", APIKey: "k", UserAgent: "ua", BaseURL: "https://x"},
-		{HTTPClient: c, Email: "e", APIKey: "", UserAgent: "ua", BaseURL: "https://x"},
-		{HTTPClient: c, Email: "e", APIKey: "k", UserAgent: "", BaseURL: "https://x"},
-		{HTTPClient: c, Email: "e", APIKey: "k", UserAgent: "ua", BaseURL: ""},
-		{HTTPClient: nil, Email: "e", APIKey: "k", UserAgent: "ua", BaseURL: "https://x"},
+		{HTTPClient: c, BaseURL: ""},                                          // missing BaseURL
+		{HTTPClient: c, BaseURL: "https://x"},                                 // missing Credentials
+		{HTTPClient: nil, BaseURL: "https://x", Credentials: creds},           // missing HTTPClient
 	}
 	for i, opt := range cases {
 		if _, err := NewRequestExecutor(opt); err == nil {
@@ -215,9 +215,7 @@ func TestExecutor_LoggingDisabled_WritesNothing(t *testing.T) {
 	exec, err := NewRequestExecutor(RequestExecutorOptions{
 		HTTPClient:  NewClient(ClientOptions{}),
 		BaseURL:     ts.URL,
-		Email:       "test@example.com",
-		APIKey:      "test-key",
-		UserAgent:   "Test (test@example.com)",
+		Credentials: credprovider.Static("test@example.com", "test-key", "Test (test@example.com)"),
 		LogRequests: false,
 		Logger:      zap.New(core),
 	})
@@ -247,9 +245,7 @@ func TestExecutor_LoggingEnabled_CapturesMethodPathBody_RedactsAuth(t *testing.T
 	exec, err := NewRequestExecutor(RequestExecutorOptions{
 		HTTPClient:  NewClient(ClientOptions{}),
 		BaseURL:     ts.URL,
-		Email:       "test@example.com",
-		APIKey:      "super-secret-key",
-		UserAgent:   "Test (test@example.com)",
+		Credentials: credprovider.Static("test@example.com", "super-secret-key", "Test (test@example.com)"),
 		LogRequests: true,
 		Logger:      zap.New(core),
 	})

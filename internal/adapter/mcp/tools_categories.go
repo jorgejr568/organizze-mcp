@@ -6,7 +6,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
-	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 type CategoryService interface {
@@ -111,24 +110,24 @@ func deleteCategoryHandler(svc CategoryService) mcpsdk.ToolHandlerFor[DeleteCate
 	}
 }
 
-func registerCategoryTools(s *mcpsdk.Server, r stats.Reporter, svc CategoryService) {
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+func registerCategoryTools(s *mcpsdk.Server, inst instrumentation, svc CategoryService) {
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "list_categories",
 		Description: "List all Organizze categories.",
 	}, listCategoriesHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "get_category",
 		Description: "Fetch a single Organizze category by id.",
 	}, getCategoryHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "create_category",
 		Description: "Create a new Organizze category. Required: name. Color and parent_id are optional.",
 	}, createCategoryHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "update_category",
 		Description: "Update fields on an existing Organizze category. Only fields you provide are changed.",
 	}, updateCategoryHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "delete_category",
 		Description: "Permanently delete an Organizze category by id. Optionally pass replacement_id (numeric id of another category) to reassign affected transactions to that category — without this, Organizze falls back to the default category. The deleted category snapshot is returned in the 'category' field when the API provides one.",
 	}, deleteCategoryHandler(svc))

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autorizar {{.ClientName}} — Organizze MCP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f4f5f3;
+      color: #1f2226;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    .wrap {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-weight: 700;
+      font-size: 22px;
+      color: #0d2419;
+      letter-spacing: -0.01em;
+    }
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 5px solid #16a34a;
+      background: #fff;
+    }
+    .card {
+      width: 100%;
+      max-width: 432px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
+      padding: 32px 32px 28px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      line-height: 1.3;
+      font-weight: 700;
+      color: #0d2419;
+    }
+    .desc {
+      margin: 0 0 22px;
+      color: #4b5560;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .desc strong { color: #0d2419; }
+    .err {
+      margin: 0 0 18px;
+      padding: 10px 12px;
+      background: #fdecec;
+      border: 1px solid #f5c2c2;
+      border-radius: 8px;
+      color: #9b1c1c;
+      font-size: 13.5px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2226;
+      margin: 14px 0 6px;
+    }
+    label .req { color: #16a34a; margin-left: 2px; }
+    input[type=email],
+    input[type=text],
+    input[type=password] {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid #d3d6da;
+      border-radius: 8px;
+      font: inherit;
+      font-size: 14.5px;
+      color: #1f2226;
+      background: #fff;
+      outline: none;
+      transition: border-color .12s, box-shadow .12s;
+    }
+    input:focus {
+      border-color: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, .18);
+    }
+    .hint {
+      color: #6c7480;
+      font-size: 12.5px;
+      margin: 6px 0 0;
+    }
+    .hint a { color: #16a34a; text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+    button.primary {
+      display: block;
+      width: 100%;
+      margin-top: 22px;
+      padding: 12px 16px;
+      background: #16a34a;
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    button.primary:hover { background: #108037; }
+    button.primary:focus-visible {
+      outline: 3px solid rgba(22, 163, 74, .35);
+      outline-offset: 1px;
+    }
+    .session-user {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid #d6e9dd;
+      background: #f0fdf4;
+      border-radius: 10px;
+      margin-bottom: 4px;
+    }
+    .session-user .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #16a34a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+    .session-user .who-label {
+      font-size: 12px;
+      color: #4b5560;
+      line-height: 1.2;
+    }
+    .session-user .email {
+      font-weight: 600;
+      font-size: 14px;
+      color: #0d2419;
+      word-break: break-all;
+      line-height: 1.3;
+    }
+    .switch-link {
+      display: block;
+      text-align: center;
+      margin-top: 14px;
+      color: #6c7480;
+      font-size: 13px;
+      text-decoration: none;
+    }
+    .switch-link a {
+      color: #16a34a;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .switch-link a:hover { text-decoration: underline; }
+    .footer {
+      margin-top: 22px;
+      color: #8a9099;
+      font-size: 12px;
+      text-align: center;
+      max-width: 432px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>organizze</span>
+    </div>
+    <div class="card">
+      <h1>Autorizar <strong>{{.ClientName}}</strong></h1>
+      <p class="desc">
+        {{.ClientName}} está solicitando acesso à sua conta Organizze através
+        deste servidor MCP. Suas credenciais ficam armazenadas apenas neste
+        servidor — criptografadas em repouso.
+      </p>
+
+      {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+
+      <form method="POST" action="/oauth/authorize" autocomplete="on">
+        <input type="hidden" name="consent_token"         value="{{.ConsentToken}}">
+        <input type="hidden" name="client_id"             value="{{.ClientID}}">
+        <input type="hidden" name="redirect_uri"          value="{{.RedirectURI}}">
+        <input type="hidden" name="state"                 value="{{.State}}">
+        <input type="hidden" name="code_challenge"        value="{{.CodeChallenge}}">
+        <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+
+        {{if .SessionUser}}
+          <div class="session-user">
+            <div class="avatar" aria-hidden="true">{{.SessionUser.Initial}}</div>
+            <div>
+              <div class="who-label">Conectado como</div>
+              <div class="email">{{.SessionUser.Email}}</div>
+            </div>
+          </div>
+          <input type="hidden" name="use_session" value="1">
+          <button type="submit" class="primary">Continuar como {{.SessionUser.Email}}</button>
+          <p class="switch-link">
+            <a href="/oauth/authorize?{{.RawQuery}}&amp;reset=1">Entrar com outra conta</a>
+          </p>
+        {{else}}
+          <label for="email">E-mail do Organizze<span class="req">*</span></label>
+          <input id="email" type="email" name="email" required autocomplete="email">
+
+          <label for="api_key">Chave da API<span class="req">*</span></label>
+          <input id="api_key" type="password" name="api_key" required autocomplete="off">
+          <p class="hint">
+            Pegue sua chave em
+            <a href="https://app.organizze.com.br/configuracoes/api" target="_blank" rel="noopener">organizze.com.br &rarr; Configurações &rarr; API</a>.
+          </p>
+
+          <label for="user_agent">Identificação do app<span class="req">*</span></label>
+          <input id="user_agent" type="text" name="user_agent" placeholder="seu-nome (voce@example.com)" required>
+
+          <button type="submit" class="primary">Autorizar acesso</button>
+        {{end}}
+      </form>
+    </div>
+    <p class="footer">Servidor MCP de terceiros — não operado pela Organizze.</p>
+  </div>
+</body>
+</html>

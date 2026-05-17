@@ -6,7 +6,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
-	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 type AccountService interface {
@@ -127,24 +126,24 @@ func deleteAccountHandler(svc AccountService) mcpsdk.ToolHandlerFor[DeleteAccoun
 	}
 }
 
-func registerAccountTools(s *mcpsdk.Server, r stats.Reporter, svc AccountService) {
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+func registerAccountTools(s *mcpsdk.Server, inst instrumentation, svc AccountService) {
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "list_accounts",
 		Description: "List all bank/cash accounts in Organizze.",
 	}, listAccountsHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "get_account",
 		Description: "Fetch a single Organizze account by id.",
 	}, getAccountHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "create_account",
 		Description: "Create a new Organizze bank/cash account. Required: name, type (checking|savings|other).",
 	}, createAccountHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "update_account",
 		Description: "Update fields on an existing Organizze account. Only fields you provide are changed. Set archived=true to archive (or false to unarchive).",
 	}, updateAccountHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "delete_account",
 		Description: "Permanently delete an Organizze account by id.",
 	}, deleteAccountHandler(svc))

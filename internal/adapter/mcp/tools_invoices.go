@@ -6,7 +6,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
-	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 type InvoiceService interface {
@@ -73,16 +72,16 @@ func getInvoicePaymentHandler(svc InvoiceService) mcpsdk.ToolHandlerFor[GetInvoi
 	}
 }
 
-func registerInvoiceTools(s *mcpsdk.Server, r stats.Reporter, svc InvoiceService) {
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+func registerInvoiceTools(s *mcpsdk.Server, inst instrumentation, svc InvoiceService) {
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "list_credit_card_invoices",
 		Description: "List invoices for a given credit card. Optional start_date / end_date (YYYY-MM-DD) widen beyond the default current-year window.",
 	}, listInvoicesHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "get_credit_card_invoice",
 		Description: "Fetch a specific credit-card invoice.",
 	}, getInvoiceHandler(svc))
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "get_credit_card_invoice_payment",
 		Description: "Fetch the consolidated payment Transaction for a credit-card invoice (GET /credit_cards/{credit_card_id}/invoices/{invoice_id}/payments).",
 	}, getInvoicePaymentHandler(svc))

@@ -5,6 +5,7 @@ package mcp
 
 import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/zap"
 
 	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
@@ -23,6 +24,12 @@ var Version = "dev"
 // root in cmd/organizze-mcp wires usecase.*Service concretes into these slots.
 type Dependencies struct {
 	Reporter stats.Reporter
+	// Logger receives one structured record per tool call (info on success,
+	// warn on error). Defaults to zap.NewNop() so tests need not provide one.
+	// The log uses the same non-sensitive vocabulary as the stats reporter
+	// (tool name, status, error_class, duration_ms) — never tool arguments
+	// or return values.
+	Logger *zap.Logger
 
 	User        UserService
 	Account     AccountService
@@ -36,24 +43,24 @@ type Dependencies struct {
 
 // New builds an *mcp.Server with every Organizze tool registered.
 func New(deps Dependencies) *mcpsdk.Server {
-	r := deps.Reporter
-	if r == nil {
-		r = stats.NoopReporter{}
-	}
+	inst := instrumentation{
+		reporter: deps.Reporter,
+		logger:   deps.Logger,
+	}.normalize()
 
 	s := mcpsdk.NewServer(&mcpsdk.Implementation{
 		Name:    "organizze-mcp",
 		Version: Version,
 	}, nil)
 
-	registerUserTools(s, r, deps.User)
-	registerAccountTools(s, r, deps.Account)
-	registerCategoryTools(s, r, deps.Category)
-	registerBudgetTools(s, r, deps.Budget)
-	registerCreditCardTools(s, r, deps.CreditCard)
-	registerInvoiceTools(s, r, deps.Invoice)
-	registerTransferTools(s, r, deps.Transfer)
-	registerTransactionTools(s, r, deps.Transaction)
+	registerUserTools(s, inst, deps.User)
+	registerAccountTools(s, inst, deps.Account)
+	registerCategoryTools(s, inst, deps.Category)
+	registerBudgetTools(s, inst, deps.Budget)
+	registerCreditCardTools(s, inst, deps.CreditCard)
+	registerInvoiceTools(s, inst, deps.Invoice)
+	registerTransferTools(s, inst, deps.Transfer)
+	registerTransactionTools(s, inst, deps.Transaction)
 
 	return s
 }

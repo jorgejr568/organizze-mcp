@@ -6,7 +6,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
-	"github.com/jorgejr568/organizze-mcp/internal/stats"
 )
 
 // UserService is the consumer-side slice this file needs from usecase.UserService.
@@ -32,8 +31,8 @@ func getUserHandler(svc UserService) mcpsdk.ToolHandlerFor[GetUserInput, GetUser
 	}
 }
 
-func registerUserTools(s *mcpsdk.Server, r stats.Reporter, svc UserService) {
-	addInstrumentedTool(s, r, &mcpsdk.Tool{
+func registerUserTools(s *mcpsdk.Server, inst instrumentation, svc UserService) {
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "get_user",
 		Description: "Fetch details for an Organizze user by numeric id.",
 	}, getUserHandler(svc))

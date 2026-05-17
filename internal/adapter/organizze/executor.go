@@ -10,15 +10,20 @@ import (
 	"net/http"
 
 	"go.uber.org/zap"
+
+	"github.com/jorgejr568/organizze-mcp/internal/oauth/credprovider"
 )
 
 // RequestExecutorOptions configures a RequestExecutor.
 type RequestExecutorOptions struct {
 	HTTPClient HTTPClient // required
 	BaseURL    string     // required (no trailing slash)
-	Email      string     // required (Basic-Auth username)
-	APIKey     string     // required (Basic-Auth password)
-	UserAgent  string     // required (Organizze rejects requests without it)
+
+	// Credentials resolves the per-request Basic-Auth pair and User-Agent.
+	// Required. Single-tenant callers wrap their env-derived values in
+	// credprovider.Static; the OAuth binary uses credprovider.FromContext
+	// after bearer middleware has populated the context.
+	Credentials credprovider.CredentialsProvider
 
 	// LogRequests, when true, emits one structured log record per outgoing
 	// request and one per response (body truncated to 2KB). The
@@ -38,9 +43,7 @@ type RequestExecutorOptions struct {
 type RequestExecutor struct {
 	client      HTTPClient
 	baseURL     string
-	email       string
-	apiKey      string
-	userAgent   string
+	credentials credprovider.CredentialsProvider
 	logRequests bool
 	logger      *zap.Logger
 }
@@ -52,12 +55,8 @@ func NewRequestExecutor(opts RequestExecutorOptions) (*RequestExecutor, error) {
 		return nil, errors.New("organizze: HTTPClient is required")
 	case opts.BaseURL == "":
 		return nil, errors.New("organizze: BaseURL is required")
-	case opts.Email == "":
-		return nil, errors.New("organizze: Email is required")
-	case opts.APIKey == "":
-		return nil, errors.New("organizze: APIKey is required")
-	case opts.UserAgent == "":
-		return nil, errors.New("organizze: UserAgent is required")
+	case opts.Credentials == nil:
+		return nil, errors.New("organizze: Credentials provider is required")
 	}
 	logger := opts.Logger
 	if logger == nil {
@@ -66,9 +65,7 @@ func NewRequestExecutor(opts RequestExecutorOptions) (*RequestExecutor, error) {
 	return &RequestExecutor{
 		client:      opts.HTTPClient,
 		baseURL:     opts.BaseURL,
-		email:       opts.Email,
-		apiKey:      opts.APIKey,
-		userAgent:   opts.UserAgent,
+		credentials: opts.Credentials,
 		logRequests: opts.LogRequests,
 		logger:      logger.Named("organizze"),
 	}, nil
@@ -114,8 +111,12 @@ func (e *RequestExecutor) do(ctx context.Context, method, path string, body, out
 	if err != nil {
 		return fmt.Errorf("organizze: build request: %w", err)
 	}
-	req.SetBasicAuth(e.email, e.apiKey)
-	req.Header.Set("User-Agent", e.userAgent)
+	email, apiKey, ua, err := e.credentials(ctx)
+	if err != nil {
+		return fmt.Errorf("organizze: resolve credentials: %w", err)
+	}
+	req.SetBasicAuth(email, apiKey)
+	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "application/json")
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jorgejr568/organizze-mcp/internal/oauth/credprovider"
 )
 
 // newTestExecutor spins up an httptest.Server backed by handler and returns
@@ -13,11 +15,9 @@ func newTestExecutor(t *testing.T, handler http.HandlerFunc) (*RequestExecutor, 
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	exec, err := NewRequestExecutor(RequestExecutorOptions{
-		HTTPClient: NewClient(ClientOptions{}),
-		BaseURL:    ts.URL,
-		Email:      "test@example.com",
-		APIKey:     "test-key",
-		UserAgent:  "Test (test@example.com)",
+		HTTPClient:  NewClient(ClientOptions{}),
+		BaseURL:     ts.URL,
+		Credentials: credprovider.Static("test@example.com", "test-key", "Test (test@example.com)"),
 	})
 	if err != nil {
 		t.Fatalf("NewRequestExecutor: %v", err)

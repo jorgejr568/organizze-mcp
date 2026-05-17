@@ -38,3 +38,16 @@ docker-run:
 
 clean:
 	rm -rf bin/ coverage.out coverage.html
+
+.PHONY: oauth-build oauth-migrate-up oauth-migrate-down
+
+oauth-build:
+	go build -trimpath -ldflags="-s -w -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=$(VERSION)'" -o bin/organizze-mcp-oauth ./cmd/organizze-mcp-oauth
+
+oauth-migrate-up:
+	@test -n "$$OAUTH_DATABASE_URL" || (echo "OAUTH_DATABASE_URL must be set" && exit 1)
+	psql "$$OAUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f internal/oauth/storage/migrations/001_init.sql
+
+oauth-migrate-down:
+	@test -n "$$OAUTH_DATABASE_URL" || (echo "OAUTH_DATABASE_URL must be set" && exit 1)
+	psql "$$OAUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f internal/oauth/storage/migrations/001_down.sql
