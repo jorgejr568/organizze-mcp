@@ -65,6 +65,17 @@ func TestJSONShape_DomainTypesDecodeRealisticFixtures(t *testing.T) {
 			inv.Date == "" || inv.StartingDate == "" || inv.ClosingDate == "" {
 			t.Errorf("Invoice decode lost fields: %+v", inv)
 		}
+		// The credit-card-invoice endpoint returns transactions[].tags as a
+		// comma-separated string (vs. the documented array shape). The fixture
+		// exercises that wire form; the flex-decoding domain.Tags type must
+		// produce the same []Tag a normal transactions endpoint would.
+		if len(inv.Transactions) != 1 {
+			t.Fatalf("Invoice decode lost transactions: %+v", inv)
+		}
+		tags := inv.Transactions[0].Tags
+		if len(tags) != 2 || tags[0].Name != "coffee" || tags[1].Name != "weekday" {
+			t.Errorf("Invoice transaction tags = %+v, want [{coffee} {weekday}]", tags)
+		}
 	})
 
 	t.Run("Transaction", func(t *testing.T) {

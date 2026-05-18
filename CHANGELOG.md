@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`get_credit_card_invoice` no longer fails to decode invoices whose transactions carry tags.** `GET /credit_cards/{credit_card_id}/invoices/{invoice_id}` returns `transactions[].tags` as a comma-separated string (e.g. `"coffee,weekday"`), not the documented `[{"name":"..."}, ...]` array shape every other transactions endpoint emits. The whole response decode aborted with `json: cannot unmarshal string into Go struct field Transaction.transactions.tags of type []domain.Tag`, so the tool was effectively broken for any invoice that had tagged transactions. `domain.Tags` is now a defined slice type with a flex `UnmarshalJSON` that accepts both the array shape (every other endpoint) and the comma-separated string shape (this endpoint and any future undocumented offenders), trimming whitespace and dropping empty parts. Marshalling still produces the documented array shape, so outbound request bodies are unchanged. Applied to both `Transaction.Tags` and `Transfer.Tags`.
+
 ## [0.9.2] - 2026-05-17
 
 ### Changed
