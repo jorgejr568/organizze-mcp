@@ -22,7 +22,7 @@ type Transfer struct {
 	OppositeTransactionID   *int64   `json:"oposite_transaction_id,omitempty"`
 	OppositeAccountID       *int64   `json:"oposite_account_id,omitempty"`
 	RecurrenceID            *int64   `json:"recurrence_id,omitempty"`
-	Tags                    []Tag    `json:"tags,omitempty"`
+	Tags                    Tags     `json:"tags,omitempty"`
 	Attachments             []string `json:"attachments,omitempty"`
 	CreatedAt               string   `json:"created_at,omitempty"`
 	UpdatedAt               string   `json:"updated_at,omitempty"`

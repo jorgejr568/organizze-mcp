@@ -100,6 +100,7 @@ These came from production-burning surprises. The MCP encodes the workarounds; f
 5. **PUT /transactions: absent fields mean "leave unchanged", not "clear to null".** `UpdateTransactionParams` uses pointer fields with `,omitempty` to preserve that semantic. Replacing this with non-pointer fields would silently clear data on partial updates.
 6. **`recurrence` and `installments` are mutually exclusive on create.** Service-layer validation enforces it.
 7. **User-Agent header is required.** Format: `ApplicationName (email@example.com)`. Omitting it returns 400.
+8. **`GET /credit_cards/{id}/invoices/{invoice_id}` returns `transactions[].tags` as a comma-separated STRING, not the documented array.** Every other endpoint that emits transactions (`GET /transactions`, `GET /transactions/{id}`, etc.) returns `tags` as `[{"name":"x"}, ...]`; only this invoice endpoint emits the same field as e.g. `"coffee,weekday"`. A naive `[]Tag` decoder aborts the whole response with `json: cannot unmarshal string into Go struct field Transaction.transactions.tags of type []domain.Tag`. `domain.Tags` (`internal/domain/transaction.go`) is therefore a defined slice type whose `UnmarshalJSON` accepts null / array / string and produces a uniform `[]Tag` either way. Marshalling stays in the array shape so request bodies are unchanged. Do not "simplify" `Tags` back to `[]Tag` without re-testing this endpoint.
 
 ## Tooling quirks
 

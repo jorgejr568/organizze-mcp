@@ -8,6 +8,18 @@
   "balance_cents": 120000,
   "previous_balance_cents": 0,
   "credit_card_id": 1,
-  "transactions": [],
+  "transactions": [
+    {
+      "id": 7,
+      "description": "Coffee at Octavio",
+      "date": "2026-05-12",
+      "paid": true,
+      "amount_cents": -1500,
+      "account_id": 1,
+      "account_type": "CreditCard",
+      "category_id": 10,
+      "tags": "coffee,weekday"
+    }
+  ],
   "payments": []
 }

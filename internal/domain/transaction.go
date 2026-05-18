@@ -1,10 +1,67 @@
 package domain
 
-import "slices"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+)
 
 // Tag is a lightweight tag attached to a transaction.
 type Tag struct {
 	Name string `json:"name"`
+}
+
+// Tags is a slice of Tag with a flex-decoding UnmarshalJSON. Most Organizze
+// endpoints emit the documented array shape (`[{"name":"x"}, ...]`), but
+// GET /credit_cards/{id}/invoices/{invoice_id} returns the same field as a
+// comma-separated string inside its transactions array. Accepting both
+// shapes here keeps the rest of the stack ignorant of the inconsistency.
+// Marshalling stays in the array shape, so outbound request bodies are
+// unchanged.
+type Tags []Tag
+
+// UnmarshalJSON accepts either:
+//   - null                              → nil
+//   - [] / [{"name":"x"}, ...]          → decoded normally
+//   - "" / "   "                        → nil
+//   - "tag1,tag2" (comma-separated)     → split, trim, drop empties
+func (t *Tags) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimLeft(data, " \t\n\r")
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*t = nil
+		return nil
+	}
+	switch trimmed[0] {
+	case '[':
+		var arr []Tag
+		if err := json.Unmarshal(data, &arr); err != nil {
+			return err
+		}
+		*t = Tags(arr)
+		return nil
+	case '"':
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		if strings.TrimSpace(s) == "" {
+			*t = nil
+			return nil
+		}
+		parts := strings.Split(s, ",")
+		out := make(Tags, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, Tag{Name: p})
+			}
+		}
+		*t = out
+		return nil
+	default:
+		return fmt.Errorf("Tags: expected array or string, got %s", data)
+	}
 }
 
 // Transaction is a ledger entry. AmountCents is negative for expenses,
@@ -30,8 +87,8 @@ type Transaction struct {
 	PaidCreditCardInvoiceID *int64 `json:"paid_credit_card_invoice_id,omitempty"`
 	OppositeTransactionID   *int64 `json:"oposite_transaction_id,omitempty"`
 	OppositeAccountID       *int64 `json:"oposite_account_id,omitempty"`
-	RecurrenceID            *int64 `json:"recurrence_id,omitempty"`
-	Tags                    []Tag    `json:"tags,omitempty"`
+	RecurrenceID            *int64   `json:"recurrence_id,omitempty"`
+	Tags                    Tags     `json:"tags,omitempty"`
 	Attachments             []string `json:"attachments,omitempty"`
 	CreatedAt               string   `json:"created_at,omitempty"`
 	UpdatedAt               string `json:"updated_at,omitempty"`
