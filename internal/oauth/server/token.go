@@ -40,11 +40,15 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	clientID, err := authenticateClient(ctx, s.cfg.Store, r)
+	if err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "")
+		return
+	}
 	code := r.PostForm.Get("code")
-	clientID := r.PostForm.Get("client_id")
 	redirectURI := r.PostForm.Get("redirect_uri")
 	verifier := r.PostForm.Get("code_verifier")
-	if code == "" || clientID == "" || verifier == "" {
+	if code == "" || verifier == "" {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "missing required field")
 		return
 	}
@@ -86,9 +90,13 @@ func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	clientID, err := authenticateClient(ctx, s.cfg.Store, r)
+	if err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "")
+		return
+	}
 	rt := r.PostForm.Get("refresh_token")
-	clientID := r.PostForm.Get("client_id")
-	if rt == "" || clientID == "" {
+	if rt == "" {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "")
 		return
 	}

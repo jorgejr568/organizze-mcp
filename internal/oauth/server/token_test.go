@@ -372,3 +372,154 @@ func TestToken_RefreshGrant_GarbageDoesNotKillFamily(t *testing.T) {
 		t.Errorf("legitimate refresh after garbage replay status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func seedConfidentialClient(t *testing.T, fs *fakeStore) (id, secret, redirect string) {
+	t.Helper()
+	id = "conf-client"
+	secret = "super-secret-32-bytes-or-whatever"
+	redirect = "https://chat.example.com/cb"
+	if err := fs.CreateClient(context.Background(), storage.Client{
+		ID:               id,
+		ClientName:       "Perplexity",
+		ClientSecretHash: storage.HashToken(secret),
+		RedirectURIs:     []string{redirect},
+	}); err != nil {
+		t.Fatalf("CreateClient: %v", err)
+	}
+	return
+}
+
+func postFormWithBasic(srv *Server, form url.Values, basicID, basicSecret string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if basicID != "" || basicSecret != "" {
+		auth := basicID + ":" + basicSecret
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(auth)))
+	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestToken_ConfidentialClient_AuthorizationCode_BasicAuth_Success(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	id, secret, redirect := seedConfidentialClient(t, fs)
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	// issueCode hard-codes RedirectURI to https://chat.example.com/cb,
+	// which matches seedConfidentialClient's redirect.
+	code, _ := issueCode(t, fs, id, verifier)
+
+	rec := postFormWithBasic(srv, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"code_verifier": {verifier},
+	}, id, secret)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestToken_ConfidentialClient_AuthorizationCode_PostAuth_Success(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	id, secret, redirect := seedConfidentialClient(t, fs)
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, id, verifier)
+
+	rec := postForm(srv, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"client_id":     {id},
+		"client_secret": {secret},
+		"code_verifier": {verifier},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestToken_ConfidentialClient_MissingSecret_InvalidClient(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	id, _, redirect := seedConfidentialClient(t, fs)
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, id, verifier)
+
+	rec := postForm(srv, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"client_id":     {id},
+		"code_verifier": {verifier},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["error"] != "invalid_client" {
+		t.Errorf("error = %v, want invalid_client", body["error"])
+	}
+}
+
+func TestToken_ConfidentialClient_WrongSecret_InvalidClient(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	id, _, redirect := seedConfidentialClient(t, fs)
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, id, verifier)
+
+	rec := postFormWithBasic(srv, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"code_verifier": {verifier},
+	}, id, "this-is-not-the-secret")
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestToken_ConfidentialClient_RefreshGrant_RequiresSecret(t *testing.T) {
+	srv, fs := newServerWithFakeStore(t)
+	srv.cfg.Cipher = mustTestCipher(t)
+	id, secret, redirect := seedConfidentialClient(t, fs)
+	verifier := "verifier-that-is-long-enough-12345678901234567"
+	code, _ := issueCode(t, fs, id, verifier)
+
+	// Mint a token pair via the confidential code grant.
+	rec := postFormWithBasic(srv, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"code_verifier": {verifier},
+	}, id, secret)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("seed exchange status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var pair map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &pair)
+	refresh := pair["refresh_token"].(string)
+
+	// Refresh without secret must fail.
+	rec = postForm(srv, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refresh},
+		"client_id":     {id},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (refresh without secret on confidential client)", rec.Code)
+	}
+
+	// Refresh with secret must succeed.
+	rec = postFormWithBasic(srv, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refresh},
+	}, id, secret)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d body=%s (refresh with secret should succeed)", rec.Code, rec.Body.String())
+	}
+}
