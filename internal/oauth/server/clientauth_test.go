@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -93,8 +94,12 @@ func TestAuthenticateClient_ConfidentialClient_MissingSecretRejected(t *testing.
 		RedirectURIs:     []string{"https://x.example.com/cb"},
 	})
 	r := newTokenReq(t, url.Values{"client_id": {"conf-3"}}, "", "")
-	if _, err := authenticateClient(r.Context(), fs, r); err == nil {
+	_, err := authenticateClient(r.Context(), fs, r)
+	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, errInvalidClient) {
+		t.Errorf("err = %v, want errInvalidClient", err)
 	}
 }
 
@@ -106,16 +111,24 @@ func TestAuthenticateClient_ConfidentialClient_WrongSecretRejected(t *testing.T)
 		RedirectURIs:     []string{"https://x.example.com/cb"},
 	})
 	r := newTokenReq(t, url.Values{}, "conf-4", "wrong-secret")
-	if _, err := authenticateClient(r.Context(), fs, r); err == nil {
+	_, err := authenticateClient(r.Context(), fs, r)
+	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, errInvalidClient) {
+		t.Errorf("err = %v, want errInvalidClient", err)
 	}
 }
 
 func TestAuthenticateClient_UnknownClientRejected(t *testing.T) {
 	fs := newFakeStore()
 	r := newTokenReq(t, url.Values{"client_id": {"does-not-exist"}}, "", "")
-	if _, err := authenticateClient(r.Context(), fs, r); err == nil {
+	_, err := authenticateClient(r.Context(), fs, r)
+	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, errInvalidClient) {
+		t.Errorf("err = %v, want errInvalidClient", err)
 	}
 }
 
@@ -132,15 +145,58 @@ func TestAuthenticateClient_BasicAndFormIDMismatchRejected(t *testing.T) {
 		"client_id":     {"conf-OTHER"},
 		"client_secret": {"s"},
 	}, "conf-5", "s")
-	if _, err := authenticateClient(r.Context(), fs, r); err == nil {
+	_, err := authenticateClient(r.Context(), fs, r)
+	if err == nil {
 		t.Fatal("expected error on Basic-vs-form id mismatch, got nil")
+	}
+	if !errors.Is(err, errInvalidClient) {
+		t.Errorf("err = %v, want errInvalidClient", err)
 	}
 }
 
 func TestAuthenticateClient_MissingClientIDRejected(t *testing.T) {
 	fs := newFakeStore()
 	r := newTokenReq(t, url.Values{}, "", "")
-	if _, err := authenticateClient(r.Context(), fs, r); err == nil {
+	_, err := authenticateClient(r.Context(), fs, r)
+	if err == nil {
 		t.Fatal("expected error when no client_id present, got nil")
+	}
+	if !errors.Is(err, errInvalidClient) {
+		t.Errorf("err = %v, want errInvalidClient", err)
+	}
+}
+
+func TestAuthenticateClient_EmptyBasicUseridRejected(t *testing.T) {
+	// Authorization: Basic <base64(":secret")> parses as ok=true with basicID="".
+	// The empty-clientID guard must reject before any store lookup runs.
+	fs := newFakeStore()
+	r := newTokenReq(t, url.Values{}, "", "some-secret")
+	_, err := authenticateClient(r.Context(), fs, r)
+	if err == nil {
+		t.Fatal("expected error for Basic auth with empty userid, got nil")
+	}
+	if !errors.Is(err, errInvalidClient) {
+		t.Errorf("err = %v, want errInvalidClient", err)
+	}
+}
+
+func TestAuthenticateClient_BasicAndFormIDMatchTolerated(t *testing.T) {
+	// RFC 6749 §2.3.1 "MUST NOT use more than one method" — we tolerate a
+	// duplicate form client_id that matches the Basic userid (common client
+	// libraries set both defensively); reject only on contradiction.
+	fs := newFakeStore()
+	secret := "the-secret-xyz"
+	_ = fs.CreateClient(context.Background(), storage.Client{
+		ID:               "conf-dup",
+		ClientSecretHash: storage.HashToken(secret),
+		RedirectURIs:     []string{"https://x.example.com/cb"},
+	})
+	r := newTokenReq(t, url.Values{"client_id": {"conf-dup"}}, "conf-dup", secret)
+	id, err := authenticateClient(r.Context(), fs, r)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if id != "conf-dup" {
+		t.Errorf("id = %q", id)
 	}
 }
