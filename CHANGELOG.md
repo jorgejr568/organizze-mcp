@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`organizze-mcp-oauth` Dynamic Client Registration now returns a `client_secret`, unblocking Perplexity.** Perplexity's MCP client rejects DCR responses without a secret with `{"error_code":"DCR_CLIENT_SECRET_REQUIRED","message":"Dynamic client registration did not return a client_secret"}`. RFC 7591 §3.2.1 permits public clients (the prior behavior), but several MCP clients enforce confidential clients in practice. `POST /oauth/register` now generates a random 32-byte secret, persists `sha256(secret)` in the existing `oauth_clients.client_secret_hash` column, and returns the plaintext secret plus `client_id_issued_at`, `client_secret_expires_at: 0` (never expires), and `token_endpoint_auth_method: "client_secret_basic"`.
+
+### Changed
+- **`POST /oauth/token` now authenticates confidential clients.** Both `authorization_code` and `refresh_token` grants accept `client_secret_basic` (HTTP Basic) and `client_secret_post` (form body) per RFC 6749 §2.3.1, verifying the presented secret via constant-time compare against the stored sha256 hash. Clients whose stored `client_secret_hash` is NULL — every row registered before this release — continue to authenticate via PKCE alone, so no re-registration is needed for ChatGPT or Claude installations already in production. `invalid_client` is returned without distinguishing missing-secret from wrong-secret from unknown-client so the endpoint cannot be used as a client-id oracle.
+- **`.well-known/oauth-authorization-server` advertises the new methods.** `token_endpoint_auth_methods_supported` is now `["client_secret_basic", "client_secret_post", "none"]` (was `["none"]`).
+
 ## [0.9.3] - 2026-05-18
 
 ### Fixed
