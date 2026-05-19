@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-05-18
+
 ### Fixed
 - **`organizze-mcp-oauth` login form's "Chave da API" link now points to the correct page** (`https://app.organizze.com.br/configuracoes/api-keys`). The previous URL (`/configuracoes/api`) 404'd; the live page slug is `api-keys` (matches what `README.md` and `ORGANIZZE_API.md` already documented elsewhere in the repo).
 
