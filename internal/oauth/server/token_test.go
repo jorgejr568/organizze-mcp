@@ -481,6 +481,11 @@ func TestToken_ConfidentialClient_WrongSecret_InvalidClient(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["error"] != "invalid_client" {
+		t.Errorf("error = %v, want invalid_client", body["error"])
+	}
 }
 
 func TestToken_ConfidentialClient_RefreshGrant_RequiresSecret(t *testing.T) {
@@ -512,6 +517,11 @@ func TestToken_ConfidentialClient_RefreshGrant_RequiresSecret(t *testing.T) {
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 (refresh without secret on confidential client)", rec.Code)
+	}
+	var refuseBody map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &refuseBody)
+	if refuseBody["error"] != "invalid_client" {
+		t.Errorf("error = %v, want invalid_client", refuseBody["error"])
 	}
 
 	// Refresh with secret must succeed.
