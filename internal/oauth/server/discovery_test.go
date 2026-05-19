@@ -58,7 +58,13 @@ func TestAuthorizationServerMetadata(t *testing.T) {
 		t.Errorf("code_challenge_methods_supported = %v", codeMethods)
 	}
 	authMethods, _ := got["token_endpoint_auth_methods_supported"].([]any)
-	if len(authMethods) != 1 || authMethods[0] != "none" {
-		t.Errorf("token_endpoint_auth_methods_supported = %v", authMethods)
+	wantAuthMethods := []string{"client_secret_basic", "client_secret_post", "none"}
+	if len(authMethods) != len(wantAuthMethods) {
+		t.Fatalf("token_endpoint_auth_methods_supported = %v, want %v", authMethods, wantAuthMethods)
+	}
+	for i, want := range wantAuthMethods {
+		if authMethods[i] != want {
+			t.Errorf("auth method [%d] = %v, want %s", i, authMethods[i], want)
+		}
 	}
 }
