@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`organizze-mcp-oauth` Dynamic Client Registration now advertises `token_endpoint_auth_method: "client_secret_post"` instead of `"client_secret_basic"`.** Perplexity's MCP DCR client uses the MCP Python SDK, whose `OAuthClientMetadata` pydantic schema constrains `token_endpoint_auth_method` to `Literal["none", "client_secret_post"]`. v0.9.4 sent `"client_secret_basic"`, which triggered `CLIENT_REGISTRATION_FAILED` / `"Input should be 'none' or 'client_secret_post'"` on Perplexity. The token endpoint already accepts both `client_secret_basic` (HTTP Basic) and `client_secret_post` (form body) per RFC 6749 §2.3.1, so this is purely a metadata-shape fix; no auth-code change required, and ChatGPT/Claude installations are unaffected.
+
 ## [0.9.4] - 2026-05-18
 
 ### Fixed

@@ -43,8 +43,8 @@ func TestRegister_HappyPath(t *testing.T) {
 	if secret == "" {
 		t.Errorf("missing client_secret (Perplexity DCR_CLIENT_SECRET_REQUIRED): %v", got)
 	}
-	if got["token_endpoint_auth_method"] != "client_secret_basic" {
-		t.Errorf("token_endpoint_auth_method = %v, want client_secret_basic", got["token_endpoint_auth_method"])
+	if got["token_endpoint_auth_method"] != "client_secret_post" {
+		t.Errorf("token_endpoint_auth_method = %v, want client_secret_post", got["token_endpoint_auth_method"])
 	}
 	// RFC 7591 §3.2.1: 0 means the secret does not expire.
 	if v, ok := got["client_secret_expires_at"].(float64); !ok || v != 0 {

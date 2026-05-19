@@ -79,7 +79,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		RedirectURIs:            req.RedirectURIs,
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},
-		TokenEndpointAuthMethod: "client_secret_basic",
+		// Perplexity's MCP DCR client uses the Python SDK, whose
+		// OAuthClientMetadata pydantic schema limits this field to a
+		// Literal["none", "client_secret_post"] — "client_secret_basic"
+		// triggers CLIENT_REGISTRATION_FAILED / "Input should be 'none'
+		// or 'client_secret_post'". The token endpoint accepts both
+		// basic and post regardless of what's advertised here.
+		TokenEndpointAuthMethod: "client_secret_post",
 	})
 }
 
