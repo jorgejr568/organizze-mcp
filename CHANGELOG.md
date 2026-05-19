@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`organizze-mcp-oauth` Docker images now ship with the stats ingest URL + token baked in via `-ldflags`**, matching the single-tenant `organizze-mcp` image. Released OAuth deployments report tool-call telemetry by default to the same ingest Lambda → SQS → consumer → Postgres pipeline; operators who self-host can opt out with `MCP_STATS_OPTOUT=1` or override the destination with `MCP_STATS_INGEST_URL` / `MCP_STATS_INGEST_TOKEN`. Single source of truth for the token is still the AWS Secrets Manager secret identified by `vars.INGESTION_DEPLOY_SECRET_ID` — rotating it is a `aws secretsmanager update-secret` plus re-tagged release. Un-stamped dev builds continue to default to NoopReporter. Telemetry stays non-sensitive (tool name, status, error class, timing, version, transport) — no tool arguments, return values, or account IDs.
+
 ## [0.9.6] - 2026-05-18
 
 ### Fixed

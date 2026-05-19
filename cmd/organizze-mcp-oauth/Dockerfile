@@ -11,12 +11,16 @@ COPY . .
 
 ARG TARGETARCH
 ARG VERSION=dev
+ARG INGEST_URL=
+ARG INGEST_TOKEN=
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath \
       -ldflags="-s -w \
-        -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=${VERSION}'" \
+        -X 'github.com/jorgejr568/organizze-mcp/internal/adapter/mcp.Version=${VERSION}' \
+        -X 'github.com/jorgejr568/organizze-mcp/internal/stats.DefaultIngestURL=${INGEST_URL}' \
+        -X 'github.com/jorgejr568/organizze-mcp/internal/stats.DefaultIngestToken=${INGEST_TOKEN}'" \
       -o /out/organizze-mcp-oauth ./cmd/organizze-mcp-oauth
 
 FROM gcr.io/distroless/static:nonroot

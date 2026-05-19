@@ -195,11 +195,12 @@ func run() error {
 // buildStatsReporter wires the OAuth binary into the same stats pipeline the
 // single-tenant binary uses (ingest Lambda → SQS → consumer → Postgres).
 //
-// Unlike the single-tenant binary the OAuth Docker image is not stamped at
-// build time with DefaultIngestURL / DefaultIngestToken — operators ship it
-// however they like (Easypanel, k8s, plain docker), so configuration is
-// purely env-driven. Missing either of the two ingest env vars falls back
-// to NoopReporter silently — telemetry is opt-in here, not opt-out.
+// Released Docker images (jorgejr568/organizze-mcp-oauth:<tag>) ship with
+// DefaultIngestURL / DefaultIngestToken stamped in via -ldflags from
+// .github/workflows/release.yml, so out-of-the-box deployments report. The
+// env vars below override (or opt out of) those baked defaults — un-stamped
+// dev builds therefore default to NoopReporter unless the operator sets the
+// env vars at runtime.
 //
 // Honoured env vars (same vocabulary as cmd/organizze-mcp):
 //   - MCP_STATS_OPTOUT=1                    → force NoopReporter
@@ -209,12 +210,19 @@ func buildStatsReporter(ctx context.Context, logger *zap.Logger) stats.Reporter 
 	if os.Getenv("MCP_STATS_OPTOUT") != "" {
 		return stats.NoopReporter{}
 	}
-	url := os.Getenv("MCP_STATS_INGEST_URL")
-	token := os.Getenv("MCP_STATS_INGEST_TOKEN")
+	url := envOr("MCP_STATS_INGEST_URL", stats.DefaultIngestURL)
+	token := envOr("MCP_STATS_INGEST_TOKEN", stats.DefaultIngestToken)
 	if url == "" || token == "" {
 		return stats.NoopReporter{}
 	}
 	return stats.NewHTTPReporter(ctx, url, token, mcp.Version, "http-oauth", 256, logger)
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 // looksLikeSSEProbe heuristically identifies the requests an MCP SSE client
