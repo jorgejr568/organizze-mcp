@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-05-18
+
 ### Fixed
 - **`organizze-mcp-oauth` Dynamic Client Registration now returns a `client_secret`, unblocking Perplexity.** Perplexity's MCP client rejects DCR responses without a secret with `{"error_code":"DCR_CLIENT_SECRET_REQUIRED","message":"Dynamic client registration did not return a client_secret"}`. RFC 7591 §3.2.1 permits public clients (the prior behavior), but several MCP clients enforce confidential clients in practice. `POST /oauth/register` now generates a random 32-byte secret, persists `sha256(secret)` in the existing `oauth_clients.client_secret_hash` column, and returns the plaintext secret plus `client_id_issued_at`, `client_secret_expires_at: 0` (never expires), and `token_endpoint_auth_method: "client_secret_basic"`.
 
