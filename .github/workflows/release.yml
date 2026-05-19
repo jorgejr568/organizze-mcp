@@ -148,6 +148,37 @@ jobs:
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.INGESTION_DEPLOY_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.INGESTION_DEPLOY_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.INGESTION_DEPLOY_AWS_REGION }}
+
+      # Same Secrets Manager fetch as docker-mcp — the OAuth image now
+      # ships with the ingest URL + token baked in via -ldflags so
+      # operator deployments report by default. Single source of truth
+      # remains the SM secret (see docker-mcp for the long-form rationale).
+      - name: Fetch ingest shared secret
+        id: ingest_secret
+        env:
+          SECRET_ID: ${{ vars.INGESTION_DEPLOY_SECRET_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SECRET_ID" ]; then
+            echo "::error::vars.INGESTION_DEPLOY_SECRET_ID is not set" >&2
+            exit 1
+          fi
+          SECRET="$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ID" \
+            --query SecretString --output text)"
+          if [ -z "$SECRET" ]; then
+            echo "::error::Secrets Manager returned an empty value for $SECRET_ID" >&2
+            exit 1
+          fi
+          echo "::add-mask::$SECRET"
+          echo "value=$SECRET" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -159,6 +190,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
+            INGEST_URL=${{ vars.INGESTION_DEPLOY_URL }}
+            INGEST_TOKEN=${{ steps.ingest_secret.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
