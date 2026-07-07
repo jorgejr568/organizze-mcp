@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `create_transactions` tool: create up to 100 transactions in a single call.
+  Organizze has no batch endpoint, so the server fans out to individual POSTs
+  (bounded concurrency) — the call is **best-effort**: each item succeeds or
+  fails independently and the response returns a per-item `results` array plus
+  `created`/`failed` totals. Nothing is rolled back; retry only the failed
+  indices. Batches that are empty or exceed 100 items are rejected up-front.
+  Each item follows the same rules as `create_transaction` (account routing,
+  installments-total-is-total, recurrence/installments exclusivity).
+
 ## [0.9.7] - 2026-05-19
 
 ### Changed

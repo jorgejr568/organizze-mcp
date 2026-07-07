@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/jorgejr568/organizze-mcp/internal/domain"
 )
@@ -49,6 +50,45 @@ func (s *TransactionService) Create(ctx context.Context, p domain.CreateTransact
 		return nil, err
 	}
 	return s.repo.Create(ctx, p)
+}
+
+// batchCreateConcurrency bounds how many item POSTs are in flight at once
+// during CreateBatch. Organizze has no batch endpoint and rate-limits, so we
+// fan out with a small fixed worker pool rather than all-at-once.
+const batchCreateConcurrency = 5
+
+// CreateBatch creates up to domain.MaxBatchCreateTransactions transactions,
+// each via the same validated single-create path as Create. It is best-effort:
+// every item is attempted, and per-item validation or API failures (including
+// domain.ErrRateLimited) land in that item's BatchCreateResult.Err rather than
+// aborting the batch. The returned slice is index-aligned with items regardless
+// of the order goroutines finish in. A non-nil top-level error is returned only
+// when the batch itself is invalid (empty or over the cap); in that case no
+// item is attempted.
+func (s *TransactionService) CreateBatch(ctx context.Context, items []domain.CreateTransactionParams) ([]domain.BatchCreateResult, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: at least one transaction is required", domain.ErrValidation)
+	}
+	if len(items) > domain.MaxBatchCreateTransactions {
+		return nil, fmt.Errorf("%w: at most %d transactions per batch, got %d", domain.ErrValidation, domain.MaxBatchCreateTransactions, len(items))
+	}
+
+	results := make([]domain.BatchCreateResult, len(items))
+	sem := make(chan struct{}, batchCreateConcurrency)
+	var wg sync.WaitGroup
+	for i := range items {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			// Each goroutine writes only results[i]; no shared mutation, no mutex.
+			tx, err := s.Create(ctx, items[i])
+			results[i] = domain.BatchCreateResult{Index: i, Transaction: tx, Err: err}
+		}(i)
+	}
+	wg.Wait()
+	return results, nil
 }
 
 func (s *TransactionService) Update(ctx context.Context, id int64, p domain.UpdateTransactionParams) (*domain.Transaction, error) {

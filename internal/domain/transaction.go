@@ -197,3 +197,19 @@ type UpdateTransactionParams struct {
 	UpdateFuture        *bool   `json:"update_future,omitempty"`
 	UpdateAll           *bool   `json:"update_all,omitempty"`
 }
+
+// MaxBatchCreateTransactions caps a single create_transactions call. Organizze
+// has no batch endpoint, so the tool fans out to individual POSTs; the cap
+// bounds fan-out and matches the documented tool contract.
+const MaxBatchCreateTransactions = 100
+
+// BatchCreateResult is the outcome for one item in a batch create. Exactly one
+// of Transaction / Err is non-nil. Index is the item's position in the input
+// slice, preserved regardless of the order goroutines finish in. It lives in
+// domain (not usecase) so the mcp adapter can consume it without importing
+// usecase.
+type BatchCreateResult struct {
+	Index       int
+	Transaction *Transaction
+	Err         error
+}
