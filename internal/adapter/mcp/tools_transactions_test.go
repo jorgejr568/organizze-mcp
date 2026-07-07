@@ -59,9 +59,43 @@ func (f *fakeTransactionSvc) Update(_ context.Context, id int64, p domain.Update
 	f.updated.id, f.updated.params = id, p
 	return &domain.Transaction{ID: id}, nil
 }
+func (f *fakeTransactionSvc) UpdateBatch(_ context.Context, params []domain.UpdateTransactionBatchItem) ([]domain.BatchUpdateResult, error) {
+	if f.batchErr != nil {
+		return nil, f.batchErr
+	}
+	results := make([]domain.BatchUpdateResult, len(params))
+	for i, p := range params {
+		if p.Params.Description != nil && *p.Params.Description == "fail" {
+			results[i] = domain.BatchUpdateResult{Index: i, Err: domain.ErrValidation}
+			continue
+		}
+		results[i] = domain.BatchUpdateResult{
+			Index:       i,
+			Transaction: &domain.Transaction{ID: p.ID},
+		}
+	}
+	return results, nil
+}
 func (f *fakeTransactionSvc) Delete(_ context.Context, id int64, _ domain.DeleteTransactionParams) (*domain.Transaction, error) {
 	f.deletedID = id
 	return &domain.Transaction{ID: id}, nil
+}
+func (f *fakeTransactionSvc) DeleteBatch(_ context.Context, params []domain.DeleteTransactionBatchItem) ([]domain.BatchDeleteResult, error) {
+	if f.batchErr != nil {
+		return nil, f.batchErr
+	}
+	results := make([]domain.BatchDeleteResult, len(params))
+	for i, p := range params {
+		if p.ID == 999 { // special id for failure test
+			results[i] = domain.BatchDeleteResult{Index: i, Err: domain.ErrValidation}
+			continue
+		}
+		results[i] = domain.BatchDeleteResult{
+			Index:       i,
+			Transaction: &domain.Transaction{ID: p.ID},
+		}
+	}
+	return results, nil
 }
 
 type nopTransactionSvc struct{}
@@ -81,7 +115,13 @@ func (nopTransactionSvc) CreateBatch(context.Context, []domain.CreateTransaction
 func (nopTransactionSvc) Update(context.Context, int64, domain.UpdateTransactionParams) (*domain.Transaction, error) {
 	return &domain.Transaction{}, nil
 }
+func (nopTransactionSvc) UpdateBatch(context.Context, []domain.UpdateTransactionBatchItem) ([]domain.BatchUpdateResult, error) {
+	return nil, nil
+}
 func (nopTransactionSvc) Delete(context.Context, int64, domain.DeleteTransactionParams) (*domain.Transaction, error) {
+	return nil, nil
+}
+func (nopTransactionSvc) DeleteBatch(context.Context, []domain.DeleteTransactionBatchItem) ([]domain.BatchDeleteResult, error) {
 	return nil, nil
 }
 

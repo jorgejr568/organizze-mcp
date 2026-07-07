@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `update_transactions` and `delete_transactions` tools: update or delete up to 100 transactions in a single call. Just like `create_transactions`, these use a bounded-concurrency fan-out and are **best-effort**: each item succeeds or fails independently. The response includes per-item results and summary totals. Batches that are empty or exceed 100 items are rejected up-front. Each item follows the exact same rules as its single-item counterpart (`update_transaction` and `delete_transaction`).
+
 ## [0.10.0] - 2026-07-07
 
 ### Added
