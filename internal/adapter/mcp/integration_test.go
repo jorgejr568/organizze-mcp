@@ -240,6 +240,18 @@ func TestIntegration_EveryToolRoundtripsThroughProtocol(t *testing.T) {
 			"category_id":  10,
 			"paid":         true,
 		}},
+		{"create_transactions", "create_transactions", map[string]any{
+			"transactions": []any{
+				map[string]any{
+					"description": "Coffee", "date": "2026-05-14", "amount_cents": -1500,
+					"account_id": 1, "category_id": 10, "paid": true,
+				},
+				map[string]any{
+					"description": "Lunch", "date": "2026-05-14", "amount_cents": -3200,
+					"account_id": 1, "category_id": 10, "paid": true,
+				},
+			},
+		}},
 		{"update_transaction", "update_transaction", map[string]any{
 			"id":          55,
 			"description": "Pizza-updated",
@@ -317,5 +329,44 @@ func TestIntegration_CreateTransactionMissingFields_ReturnsToolError(t *testing.
 	}
 	if !res.IsError {
 		t.Fatalf("expected IsError=true; content=%v", res.Content)
+	}
+}
+
+// A batch mixing a valid item with one that fails service-layer validation
+// (category_id: 0, meaning "not set") must NOT surface as a tool error —
+// best-effort means the call succeeds and the failure is reported per item.
+// A fail-fast or all-or-nothing design would make this call error instead.
+// category_id must be present (even as 0) rather than omitted: the MCP
+// input schema marks category_id required, so an entirely missing key would
+// be rejected by protocol-level argument validation before ever reaching the
+// service layer this test targets.
+func TestIntegration_CreateTransactions_PartialFailureIsNotToolError(t *testing.T) {
+	sess := newConnectedSession(t)
+	res, err := sess.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name: "create_transactions", Arguments: map[string]any{
+			"transactions": []any{
+				map[string]any{
+					"description": "Coffee", "date": "2026-05-14", "amount_cents": -1500,
+					"account_id": 1, "category_id": 10, "paid": true,
+				},
+				map[string]any{
+					// category_id: 0 satisfies the MCP input schema's required-property
+					// check (the key is present) but fails the service layer's
+					// business-rule validation (CategoryID == 0 means "not set") →
+					// rejected before ever reaching the fake Organizze server.
+					"description": "Broken", "date": "2026-05-14", "amount_cents": -1500,
+					"account_id": 1, "category_id": 0, "paid": true,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected best-effort success (IsError=false); content=%v", res.Content)
+	}
+	if len(res.Content) == 0 {
+		t.Errorf("no content")
 	}
 }
