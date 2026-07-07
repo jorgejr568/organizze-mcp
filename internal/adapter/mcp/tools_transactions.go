@@ -15,7 +15,9 @@ type TransactionService interface {
 	Create(ctx context.Context, params domain.CreateTransactionParams) (*domain.Transaction, error)
 	CreateBatch(ctx context.Context, params []domain.CreateTransactionParams) ([]domain.BatchCreateResult, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransactionParams) (*domain.Transaction, error)
+	UpdateBatch(ctx context.Context, items []domain.UpdateTransactionBatchItem) ([]domain.BatchUpdateResult, error)
 	Delete(ctx context.Context, id int64, params domain.DeleteTransactionParams) (*domain.Transaction, error)
+	DeleteBatch(ctx context.Context, items []domain.DeleteTransactionBatchItem) ([]domain.BatchDeleteResult, error)
 }
 
 // ---------- list / get ----------
@@ -116,6 +118,25 @@ type UpdateTransactionOutput struct {
 	Transaction domain.Transaction `json:"transaction"`
 }
 
+// ---------- batch update ----------
+
+type UpdateTransactionsInput struct {
+	Transactions []UpdateTransactionInput `json:"transactions" jsonschema:"The transactions to update, 1 to 100 items. Each item follows the exact same rules as update_transaction."`
+}
+
+type UpdateTransactionResult struct {
+	Index       int                 `json:"index"`
+	Success     bool                `json:"success"`
+	Transaction *domain.Transaction `json:"transaction,omitempty"`
+	Error       string              `json:"error,omitempty"`
+}
+
+type UpdateTransactionsOutput struct {
+	Results []UpdateTransactionResult `json:"results"`
+	Updated int                       `json:"updated"`
+	Failed  int                       `json:"failed"`
+}
+
 // ---------- delete ----------
 
 type DeleteTransactionInput struct {
@@ -128,6 +149,27 @@ type DeleteTransactionOutput struct {
 	Deleted     bool                `json:"deleted"`
 	ID          int64               `json:"id"`
 	Transaction *domain.Transaction `json:"transaction,omitempty"`
+}
+
+// ---------- batch delete ----------
+
+type DeleteTransactionsInput struct {
+	Transactions []DeleteTransactionInput `json:"transactions" jsonschema:"The transactions to delete, 1 to 100 items. Each item follows the exact same rules as delete_transaction."`
+}
+
+type DeleteTransactionResult struct {
+	Index       int                 `json:"index"`
+	Success     bool                `json:"success"`
+	Deleted     bool                `json:"deleted,omitempty"`
+	ID          int64               `json:"id,omitempty"`
+	Transaction *domain.Transaction `json:"transaction,omitempty"`
+	Error       string              `json:"error,omitempty"`
+}
+
+type DeleteTransactionsOutput struct {
+	Results []DeleteTransactionResult `json:"results"`
+	Deleted int                       `json:"deleted"`
+	Failed  int                       `json:"failed"`
 }
 
 // ---------- handlers ----------
@@ -232,6 +274,42 @@ func updateTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Upda
 	}
 }
 
+func updateTransactionsHandler(svc TransactionService) mcpsdk.ToolHandlerFor[UpdateTransactionsInput, UpdateTransactionsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateTransactionsInput) (*mcpsdk.CallToolResult, UpdateTransactionsOutput, error) {
+		params := make([]domain.UpdateTransactionBatchItem, len(in.Transactions))
+		for i, item := range in.Transactions {
+			params[i] = domain.UpdateTransactionBatchItem{
+				ID: item.ID,
+				Params: domain.UpdateTransactionParams{
+					Description: item.Description, Date: item.Date, AmountCents: item.AmountCents,
+					AccountID: item.AccountID, CategoryID: item.CategoryID, Paid: item.Paid,
+					Notes: item.Notes, ContactID: item.ContactID, Tags: item.Tags,
+					CreditCardID:        item.CreditCardID,
+					CreditCardInvoiceID: item.CreditCardInvoiceID,
+					UpdateFuture:        item.UpdateFuture,
+					UpdateAll:           item.UpdateAll,
+				},
+			}
+		}
+		results, err := svc.UpdateBatch(ctx, params)
+		if err != nil {
+			return nil, UpdateTransactionsOutput{}, err
+		}
+		out := UpdateTransactionsOutput{Results: make([]UpdateTransactionResult, len(results))}
+		for i, r := range results {
+			item := UpdateTransactionResult{Index: r.Index, Success: r.Err == nil, Transaction: r.Transaction}
+			if r.Err != nil {
+				item.Error = r.Err.Error()
+				out.Failed++
+			} else {
+				out.Updated++
+			}
+			out.Results[i] = item
+		}
+		return nil, out, nil
+	}
+}
+
 func deleteTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[DeleteTransactionInput, DeleteTransactionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteTransactionInput) (*mcpsdk.CallToolResult, DeleteTransactionOutput, error) {
 		tx, err := svc.Delete(ctx, in.ID, domain.DeleteTransactionParams{
@@ -241,6 +319,36 @@ func deleteTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[Dele
 			return nil, DeleteTransactionOutput{}, err
 		}
 		return nil, DeleteTransactionOutput{Deleted: true, ID: in.ID, Transaction: tx}, nil
+	}
+}
+
+func deleteTransactionsHandler(svc TransactionService) mcpsdk.ToolHandlerFor[DeleteTransactionsInput, DeleteTransactionsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteTransactionsInput) (*mcpsdk.CallToolResult, DeleteTransactionsOutput, error) {
+		params := make([]domain.DeleteTransactionBatchItem, len(in.Transactions))
+		for i, item := range in.Transactions {
+			params[i] = domain.DeleteTransactionBatchItem{
+				ID: item.ID,
+				Params: domain.DeleteTransactionParams{
+					UpdateFuture: item.UpdateFuture, UpdateAll: item.UpdateAll,
+				},
+			}
+		}
+		results, err := svc.DeleteBatch(ctx, params)
+		if err != nil {
+			return nil, DeleteTransactionsOutput{}, err
+		}
+		out := DeleteTransactionsOutput{Results: make([]DeleteTransactionResult, len(results))}
+		for i, r := range results {
+			item := DeleteTransactionResult{Index: r.Index, Success: r.Err == nil, Deleted: r.Err == nil, ID: in.Transactions[r.Index].ID, Transaction: r.Transaction}
+			if r.Err != nil {
+				item.Error = r.Err.Error()
+				out.Failed++
+			} else {
+				out.Deleted++
+			}
+			out.Results[i] = item
+		}
+		return nil, out, nil
 	}
 }
 
@@ -273,7 +381,17 @@ func registerTransactionTools(s *mcpsdk.Server, inst instrumentation, svc Transa
 			"For recurring (fixa) or installment (parcelada) series, set update_future=true to propagate the change to this and all future occurrences, or update_all=true to propagate to every occurrence (may alter past-paid balances).",
 	}, updateTransactionHandler(svc))
 	addInstrumentedTool(s, inst, &mcpsdk.Tool{
+		Name: "update_transactions",
+		Description: "Update up to 100 Organizze transactions in a single call. Each item follows the EXACT same rules as update_transaction. " +
+			"BEST-EFFORT: items are updated independently and a failure on one does NOT stop the others. Inspect the response: `results` has one entry per input item with `index`, `success`, and either `transaction` (on success) or `error` (on failure); `updated` and `failed` are the totals. Retry only the failed indices. The whole call is rejected up-front only if the batch is empty or has more than 100 items.",
+	}, updateTransactionsHandler(svc))
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name:        "delete_transaction",
 		Description: "Permanently delete an Organizze transaction by id. For recurring (fixa) or installment (parcelada) series, set update_future=true to also delete this and all future occurrences, or update_all=true to delete every occurrence (may alter past-paid balances). The two flags are mutually exclusive.",
 	}, deleteTransactionHandler(svc))
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
+		Name: "delete_transactions",
+		Description: "Permanently delete up to 100 Organizze transactions in a single call. Each item follows the EXACT same rules as delete_transaction. " +
+			"BEST-EFFORT: items are deleted independently and a failure on one does NOT stop the others. Inspect the response: `results` has one entry per input item with `index`, `success`, and either `transaction` (on success) or `error` (on failure); `deleted` and `failed` are the totals. Retry only the failed indices. The whole call is rejected up-front only if the batch is empty or has more than 100 items.",
+	}, deleteTransactionsHandler(svc))
 }

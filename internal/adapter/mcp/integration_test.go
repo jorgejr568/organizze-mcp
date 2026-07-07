@@ -62,7 +62,11 @@ func fakeOrganizze(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, `{"id":777,"description":"Coffee","amount_cents":-1500,"account_id":1,"category_id":10,"date":"2026-05-14"}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/transactions/55":
 			_, _ = io.WriteString(w, `{"id":55,"description":"Pizza-updated","amount_cents":-4500,"account_id":1,"category_id":10,"date":"2026-05-10"}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/transactions/56":
+			_, _ = io.WriteString(w, `{"id":56,"description":"Sushi-updated","amount_cents":-6000,"account_id":1,"category_id":10,"date":"2026-05-10"}`)
 		case r.Method == http.MethodDelete && r.URL.Path == "/transactions/55":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/transactions/56":
 			w.WriteHeader(http.StatusNoContent)
 
 		// accounts write
@@ -169,7 +173,7 @@ var allExpectedTools = []string{
 	"list_transfers", "get_transfer",
 	"create_transfer", "update_transfer", "delete_transfer",
 	"list_transactions", "get_transaction",
-	"create_transaction", "create_transactions", "update_transaction", "delete_transaction",
+	"create_transaction", "create_transactions", "update_transaction", "update_transactions", "delete_transaction", "delete_transactions",
 }
 
 func TestIntegration_AllToolsRegisteredWithSchemas(t *testing.T) {
@@ -256,7 +260,19 @@ func TestIntegration_EveryToolRoundtripsThroughProtocol(t *testing.T) {
 			"id":          55,
 			"description": "Pizza-updated",
 		}},
+		{"update_transactions", "update_transactions", map[string]any{
+			"transactions": []any{
+				map[string]any{"id": 55, "description": "Pizza-updated"},
+				map[string]any{"id": 56, "description": "Sushi-updated"},
+			},
+		}},
 		{"delete_transaction", "delete_transaction", map[string]any{"id": 55}},
+		{"delete_transactions", "delete_transactions", map[string]any{
+			"transactions": []any{
+				map[string]any{"id": 55},
+				map[string]any{"id": 56},
+			},
+		}},
 
 		{"create_account", "create_account", map[string]any{
 			"name": "Itaú CC", "type": "checking",

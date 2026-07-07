@@ -213,3 +213,35 @@ type BatchCreateResult struct {
 	Transaction *Transaction
 	Err         error
 }
+
+// MaxBatchUpdateTransactions caps a single update_transactions call.
+const MaxBatchUpdateTransactions = 100
+
+// BatchUpdateResult is the outcome for one item in a batch update.
+type BatchUpdateResult struct {
+	Index       int
+	Transaction *Transaction
+	Err         error
+}
+
+// MaxBatchDeleteTransactions caps a single delete_transactions call.
+const MaxBatchDeleteTransactions = 100
+
+// BatchDeleteResult is the outcome for one item in a batch delete.
+type BatchDeleteResult struct {
+	Index       int
+	Transaction *Transaction
+	Err         error
+}
+
+// UpdateTransactionBatchItem pairs an ID with its update params for batch operations.
+type UpdateTransactionBatchItem struct {
+	ID     int64
+	Params UpdateTransactionParams
+}
+
+// DeleteTransactionBatchItem pairs an ID with its delete params for batch operations.
+type DeleteTransactionBatchItem struct {
+	ID     int64
+	Params DeleteTransactionParams
+}

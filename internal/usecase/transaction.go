@@ -52,10 +52,10 @@ func (s *TransactionService) Create(ctx context.Context, p domain.CreateTransact
 	return s.repo.Create(ctx, p)
 }
 
-// batchCreateConcurrency bounds how many item POSTs are in flight at once
-// during CreateBatch. Organizze has no batch endpoint and rate-limits, so we
+// batchConcurrency bounds how many item requests are in flight at once
+// during batch operations. Organizze has no batch endpoint and rate-limits, so we
 // fan out with a small fixed worker pool rather than all-at-once.
-const batchCreateConcurrency = 5
+const batchConcurrency = 5
 
 // CreateBatch creates up to domain.MaxBatchCreateTransactions transactions,
 // each via the same validated single-create path as Create. It is best-effort:
@@ -74,7 +74,7 @@ func (s *TransactionService) CreateBatch(ctx context.Context, items []domain.Cre
 	}
 
 	results := make([]domain.BatchCreateResult, len(items))
-	sem := make(chan struct{}, batchCreateConcurrency)
+	sem := make(chan struct{}, batchConcurrency)
 	var wg sync.WaitGroup
 	for i := range items {
 		wg.Add(1)
@@ -103,6 +103,56 @@ func (s *TransactionService) Delete(ctx context.Context, id int64, p domain.Dele
 		return nil, fmt.Errorf("%w: update_future and update_all are mutually exclusive", domain.ErrValidation)
 	}
 	return s.repo.Delete(ctx, id, p)
+}
+
+func (s *TransactionService) UpdateBatch(ctx context.Context, items []domain.UpdateTransactionBatchItem) ([]domain.BatchUpdateResult, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: at least one transaction is required", domain.ErrValidation)
+	}
+	if len(items) > domain.MaxBatchUpdateTransactions {
+		return nil, fmt.Errorf("%w: at most %d transactions per batch, got %d", domain.ErrValidation, domain.MaxBatchUpdateTransactions, len(items))
+	}
+
+	results := make([]domain.BatchUpdateResult, len(items))
+	sem := make(chan struct{}, batchConcurrency)
+	var wg sync.WaitGroup
+	for i := range items {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tx, err := s.Update(ctx, items[i].ID, items[i].Params)
+			results[i] = domain.BatchUpdateResult{Index: i, Transaction: tx, Err: err}
+		}(i)
+	}
+	wg.Wait()
+	return results, nil
+}
+
+func (s *TransactionService) DeleteBatch(ctx context.Context, items []domain.DeleteTransactionBatchItem) ([]domain.BatchDeleteResult, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: at least one transaction is required", domain.ErrValidation)
+	}
+	if len(items) > domain.MaxBatchDeleteTransactions {
+		return nil, fmt.Errorf("%w: at most %d transactions per batch, got %d", domain.ErrValidation, domain.MaxBatchDeleteTransactions, len(items))
+	}
+
+	results := make([]domain.BatchDeleteResult, len(items))
+	sem := make(chan struct{}, batchConcurrency)
+	var wg sync.WaitGroup
+	for i := range items {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tx, err := s.Delete(ctx, items[i].ID, items[i].Params)
+			results[i] = domain.BatchDeleteResult{Index: i, Transaction: tx, Err: err}
+		}(i)
+	}
+	wg.Wait()
+	return results, nil
 }
 
 func validateCreate(p domain.CreateTransactionParams) error {

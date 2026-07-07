@@ -323,6 +323,8 @@ var errBatchBoom = errors.New("boom")
 type batchRepo struct {
 	mu       sync.Mutex
 	createdN int
+	updatedN int
+	deletedN int
 	failOn   string
 }
 
@@ -342,10 +344,19 @@ func (r *batchRepo) Create(_ context.Context, p domain.CreateTransactionParams) 
 	return &domain.Transaction{Description: p.Description, AmountCents: p.AmountCents}, nil
 }
 func (r *batchRepo) Update(context.Context, int64, domain.UpdateTransactionParams) (*domain.Transaction, error) {
-	return nil, nil
+	r.mu.Lock()
+	r.updatedN++
+	r.mu.Unlock()
+	return &domain.Transaction{}, nil
 }
-func (r *batchRepo) Delete(context.Context, int64, domain.DeleteTransactionParams) (*domain.Transaction, error) {
-	return nil, nil
+func (r *batchRepo) Delete(_ context.Context, id int64, _ domain.DeleteTransactionParams) (*domain.Transaction, error) {
+	r.mu.Lock()
+	r.deletedN++
+	r.mu.Unlock()
+	if id == 999 {
+		return nil, errBatchBoom
+	}
+	return &domain.Transaction{ID: id}, nil
 }
 
 func validBatchItem(desc string) domain.CreateTransactionParams {
@@ -459,5 +470,80 @@ func TestCreateBatch_PreservesOrderUnderConcurrency(t *testing.T) {
 		if results[i].Transaction == nil || results[i].Transaction.Description != items[i].Description {
 			t.Fatalf("results[%d] = %+v, want Description %q", i, results[i].Transaction, items[i].Description)
 		}
+	}
+}
+
+func TestUpdateBatch_RejectsEmpty(t *testing.T) {
+	svc := NewTransactionService(&batchRepo{})
+	if _, err := svc.UpdateBatch(context.Background(), nil); !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("err = %v, want ErrValidation", err)
+	}
+}
+
+func TestUpdateBatch_RejectsOverCap(t *testing.T) {
+	repo := &batchRepo{}
+	svc := NewTransactionService(repo)
+	items := make([]domain.UpdateTransactionBatchItem, domain.MaxBatchUpdateTransactions+1)
+	if _, err := svc.UpdateBatch(context.Background(), items); !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("err = %v, want ErrValidation", err)
+	}
+	if repo.updatedN != 0 {
+		t.Errorf("repo.updatedN = %d, want 0", repo.updatedN)
+	}
+}
+
+func TestUpdateBatch_PreservesOrderUnderConcurrency(t *testing.T) {
+	repo := &batchRepo{}
+	svc := NewTransactionService(repo)
+	items := make([]domain.UpdateTransactionBatchItem, 25)
+	for i := range items {
+		items[i] = domain.UpdateTransactionBatchItem{ID: int64(i)}
+	}
+	results, err := svc.UpdateBatch(context.Background(), items)
+	if err != nil {
+		t.Fatalf("UpdateBatch: %v", err)
+	}
+	if len(results) != 25 {
+		t.Fatalf("len(results) = %d, want 25", len(results))
+	}
+	if repo.updatedN != 25 {
+		t.Errorf("repo.updatedN = %d, want 25", repo.updatedN)
+	}
+}
+
+func TestDeleteBatch_RejectsEmpty(t *testing.T) {
+	svc := NewTransactionService(&batchRepo{})
+	if _, err := svc.DeleteBatch(context.Background(), nil); !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("err = %v, want ErrValidation", err)
+	}
+}
+
+func TestDeleteBatch_RejectsOverCap(t *testing.T) {
+	repo := &batchRepo{}
+	svc := NewTransactionService(repo)
+	items := make([]domain.DeleteTransactionBatchItem, domain.MaxBatchDeleteTransactions+1)
+	if _, err := svc.DeleteBatch(context.Background(), items); !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("err = %v, want ErrValidation", err)
+	}
+	if repo.deletedN != 0 {
+		t.Errorf("repo.deletedN = %d, want 0", repo.deletedN)
+	}
+}
+
+func TestDeleteBatch_APIErrorIsolated(t *testing.T) {
+	repo := &batchRepo{}
+	svc := NewTransactionService(repo)
+	items := []domain.DeleteTransactionBatchItem{
+		{ID: 1}, {ID: 999}, {ID: 2}, // 999 triggers boom in batchRepo
+	}
+	results, err := svc.DeleteBatch(context.Background(), items)
+	if err != nil {
+		t.Fatalf("DeleteBatch: %v", err)
+	}
+	if !errors.Is(results[1].Err, errBatchBoom) {
+		t.Errorf("results[1].Err = %v, want errBatchBoom", results[1].Err)
+	}
+	if results[0].Err != nil || results[2].Err != nil {
+		t.Errorf("neighbours failed: [0]=%v [2]=%v", results[0].Err, results[2].Err)
 	}
 }
