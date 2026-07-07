@@ -13,6 +13,7 @@ type TransactionService interface {
 	List(ctx context.Context, filter domain.ListTransactionsFilter) ([]domain.Transaction, error)
 	Get(ctx context.Context, id int64) (*domain.Transaction, error)
 	Create(ctx context.Context, params domain.CreateTransactionParams) (*domain.Transaction, error)
+	CreateBatch(ctx context.Context, params []domain.CreateTransactionParams) ([]domain.BatchCreateResult, error)
 	Update(ctx context.Context, id int64, params domain.UpdateTransactionParams) (*domain.Transaction, error)
 	Delete(ctx context.Context, id int64, params domain.DeleteTransactionParams) (*domain.Transaction, error)
 }
@@ -68,6 +69,28 @@ type InstallmentsInput struct {
 
 type CreateTransactionOutput struct {
 	Transaction domain.Transaction `json:"transaction"`
+}
+
+// ---------- batch create ----------
+
+type CreateTransactionsInput struct {
+	Transactions []CreateTransactionInput `json:"transactions" jsonschema:"The transactions to create, 1 to 100 items. Each item follows the exact same rules as create_transaction (account routing, installments-total, recurrence/installments exclusivity)."`
+}
+
+// CreateTransactionResult is the per-item outcome. Success reports whether the
+// item was created; on success Transaction is populated, on failure Error
+// carries the reason. Index is the item's position in the request array.
+type CreateTransactionResult struct {
+	Index       int                 `json:"index"`
+	Success     bool                `json:"success"`
+	Transaction *domain.Transaction `json:"transaction,omitempty"`
+	Error       string              `json:"error,omitempty"`
+}
+
+type CreateTransactionsOutput struct {
+	Results []CreateTransactionResult `json:"results"`
+	Created int                       `json:"created"`
+	Failed  int                       `json:"failed"`
 }
 
 // ---------- update ----------
@@ -131,31 +154,63 @@ func getTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[GetTran
 	}
 }
 
+// toCreateParams maps a create input onto the domain params, including the
+// recurrence/installments sub-structs. Shared by create_transaction and
+// create_transactions so the mapping lives in exactly one place.
+func toCreateParams(in CreateTransactionInput) domain.CreateTransactionParams {
+	params := domain.CreateTransactionParams{
+		Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
+		AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
+		Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
+		CreditCardID:        in.CreditCardID,
+		CreditCardInvoiceID: in.CreditCardInvoiceID,
+	}
+	if in.Recurrence != nil {
+		params.Recurrence = &domain.RecurrenceAttributes{
+			Periodicity: domain.Periodicity(in.Recurrence.Periodicity),
+		}
+	}
+	if in.Installments != nil {
+		params.Installments = &domain.InstallmentsAttributes{
+			Periodicity: domain.Periodicity(in.Installments.Periodicity),
+			Total:       in.Installments.Total,
+		}
+	}
+	return params
+}
+
 func createTransactionHandler(svc TransactionService) mcpsdk.ToolHandlerFor[CreateTransactionInput, CreateTransactionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateTransactionInput) (*mcpsdk.CallToolResult, CreateTransactionOutput, error) {
-		params := domain.CreateTransactionParams{
-			Description: in.Description, Date: in.Date, AmountCents: in.AmountCents,
-			AccountID: in.AccountID, CategoryID: in.CategoryID, Paid: in.Paid,
-			Notes: in.Notes, ContactID: in.ContactID, Tags: in.Tags,
-			CreditCardID:        in.CreditCardID,
-			CreditCardInvoiceID: in.CreditCardInvoiceID,
-		}
-		if in.Recurrence != nil {
-			params.Recurrence = &domain.RecurrenceAttributes{
-				Periodicity: domain.Periodicity(in.Recurrence.Periodicity),
-			}
-		}
-		if in.Installments != nil {
-			params.Installments = &domain.InstallmentsAttributes{
-				Periodicity: domain.Periodicity(in.Installments.Periodicity),
-				Total:       in.Installments.Total,
-			}
-		}
-		tx, err := svc.Create(ctx, params)
+		tx, err := svc.Create(ctx, toCreateParams(in))
 		if err != nil {
 			return nil, CreateTransactionOutput{}, err
 		}
 		return nil, CreateTransactionOutput{Transaction: *tx}, nil
+	}
+}
+
+func createTransactionsHandler(svc TransactionService) mcpsdk.ToolHandlerFor[CreateTransactionsInput, CreateTransactionsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateTransactionsInput) (*mcpsdk.CallToolResult, CreateTransactionsOutput, error) {
+		params := make([]domain.CreateTransactionParams, len(in.Transactions))
+		for i, item := range in.Transactions {
+			params[i] = toCreateParams(item)
+		}
+		results, err := svc.CreateBatch(ctx, params)
+		if err != nil {
+			return nil, CreateTransactionsOutput{}, err
+		}
+		out := CreateTransactionsOutput{Results: make([]CreateTransactionResult, len(results))}
+		for i, r := range results {
+			item := CreateTransactionResult{Index: r.Index, Success: r.Err == nil, Transaction: r.Transaction}
+			if r.Err != nil {
+				item.Error = r.Err.Error()
+				out.Failed++
+			} else {
+				out.Created++
+			}
+			out.Results[i] = item
+		}
+		return nil, out, nil
 	}
 }
 
@@ -206,6 +261,11 @@ func registerTransactionTools(s *mcpsdk.Server, inst instrumentation, svc Transa
 			"For a parcelada (installment) transaction, pass `installments` with `periodicity` and `total`; IMPORTANT: when `installments` is set, Organizze treats `amount_cents` as the TOTAL across all installments and divides evenly, so each generated installment will be amount_cents/total. To get per-installment value X with N installments, send amount_cents = X * N. " +
 			"`recurrence` and `installments` are mutually exclusive.",
 	}, createTransactionHandler(svc))
+	addInstrumentedTool(s, inst, &mcpsdk.Tool{
+		Name: "create_transactions",
+		Description: "Create up to 100 Organizze transactions in a single call. Each item follows the EXACT same rules as create_transaction (amount_cents in cents; exactly one of account_id or credit_card_id; when installments is set amount_cents is the TOTAL across installments; recurrence and installments are mutually exclusive). " +
+			"BEST-EFFORT: items are created independently and a failure on one does NOT stop the others. Inspect the response: `results` has one entry per input item with `index`, `success`, and either `transaction` (on success) or `error` (on failure); `created` and `failed` are the totals. Retry only the failed indices. The whole call is rejected up-front only if the batch is empty or has more than 100 items.",
+	}, createTransactionsHandler(svc))
 	addInstrumentedTool(s, inst, &mcpsdk.Tool{
 		Name: "update_transaction",
 		Description: "Update fields on an existing Organizze transaction. Only fields you provide are changed; omitted fields are left unchanged. " +

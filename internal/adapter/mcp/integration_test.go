@@ -169,7 +169,7 @@ var allExpectedTools = []string{
 	"list_transfers", "get_transfer",
 	"create_transfer", "update_transfer", "delete_transfer",
 	"list_transactions", "get_transaction",
-	"create_transaction", "update_transaction", "delete_transaction",
+	"create_transaction", "create_transactions", "update_transaction", "delete_transaction",
 }
 
 func TestIntegration_AllToolsRegisteredWithSchemas(t *testing.T) {

@@ -17,8 +17,10 @@ type fakeTransactionSvc struct {
 		id     int64
 		params domain.UpdateTransactionParams
 	}
-	deletedID int64
-	createErr error
+	deletedID   int64
+	createErr   error
+	batchParams []domain.CreateTransactionParams
+	batchErr    error
 }
 
 func (f *fakeTransactionSvc) List(_ context.Context, fl domain.ListTransactionsFilter) ([]domain.Transaction, error) {
@@ -34,6 +36,24 @@ func (f *fakeTransactionSvc) Create(_ context.Context, p domain.CreateTransactio
 	}
 	f.created = p
 	return &domain.Transaction{ID: 777, Description: p.Description, AmountCents: p.AmountCents}, nil
+}
+func (f *fakeTransactionSvc) CreateBatch(_ context.Context, params []domain.CreateTransactionParams) ([]domain.BatchCreateResult, error) {
+	if f.batchErr != nil {
+		return nil, f.batchErr
+	}
+	f.batchParams = params
+	results := make([]domain.BatchCreateResult, len(params))
+	for i, p := range params {
+		if p.Description == "fail" {
+			results[i] = domain.BatchCreateResult{Index: i, Err: domain.ErrValidation}
+			continue
+		}
+		results[i] = domain.BatchCreateResult{
+			Index:       i,
+			Transaction: &domain.Transaction{ID: int64(700 + i), Description: p.Description, AmountCents: p.AmountCents},
+		}
+	}
+	return results, nil
 }
 func (f *fakeTransactionSvc) Update(_ context.Context, id int64, p domain.UpdateTransactionParams) (*domain.Transaction, error) {
 	f.updated.id, f.updated.params = id, p
@@ -54,6 +74,9 @@ func (nopTransactionSvc) Get(context.Context, int64) (*domain.Transaction, error
 }
 func (nopTransactionSvc) Create(context.Context, domain.CreateTransactionParams) (*domain.Transaction, error) {
 	return &domain.Transaction{}, nil
+}
+func (nopTransactionSvc) CreateBatch(context.Context, []domain.CreateTransactionParams) ([]domain.BatchCreateResult, error) {
+	return nil, nil
 }
 func (nopTransactionSvc) Update(context.Context, int64, domain.UpdateTransactionParams) (*domain.Transaction, error) {
 	return &domain.Transaction{}, nil
@@ -238,5 +261,71 @@ func TestUpdateTransactionHandler_PlumbsCreditCardInvoiceID(t *testing.T) {
 	}
 	if svc.updated.params.CreditCardInvoiceID == nil || *svc.updated.params.CreditCardInvoiceID != 317 {
 		t.Errorf("params.CreditCardInvoiceID = %v, want 317", svc.updated.params.CreditCardInvoiceID)
+	}
+}
+
+func TestCreateTransactionsHandler_MapsResultsAndCounts(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := createTransactionsHandler(svc)
+	_, out, err := h(context.Background(), &mcpsdk.CallToolRequest{}, CreateTransactionsInput{
+		Transactions: []CreateTransactionInput{
+			{Description: "a", Date: "2026-05-14", AmountCents: -1500, AccountID: 1, CategoryID: 10},
+			{Description: "fail", Date: "2026-05-14", AmountCents: -1500, AccountID: 1, CategoryID: 10},
+			{Description: "c", Date: "2026-05-14", AmountCents: -2500, AccountID: 1, CategoryID: 10},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if out.Created != 2 || out.Failed != 1 {
+		t.Errorf("created=%d failed=%d, want 2/1", out.Created, out.Failed)
+	}
+	if len(out.Results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(out.Results))
+	}
+	if !out.Results[0].Success || out.Results[0].Transaction == nil {
+		t.Errorf("results[0] = %+v, want success", out.Results[0])
+	}
+	if out.Results[1].Success || out.Results[1].Error == "" {
+		t.Errorf("results[1] = %+v, want failure with error text", out.Results[1])
+	}
+	if out.Results[2].Index != 2 {
+		t.Errorf("results[2].Index = %d, want 2", out.Results[2].Index)
+	}
+	// toCreateParams was applied to each item before dispatch.
+	if len(svc.batchParams) != 3 || svc.batchParams[2].AmountCents != -2500 {
+		t.Errorf("batchParams = %+v", svc.batchParams)
+	}
+}
+
+func TestCreateTransactionsHandler_PlumbsInstallments(t *testing.T) {
+	svc := &fakeTransactionSvc{}
+	h := createTransactionsHandler(svc)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, CreateTransactionsInput{
+		Transactions: []CreateTransactionInput{
+			{
+				Description: "Computador", Date: "2026-05-14", AmountCents: -100000,
+				AccountID: 1, CategoryID: 10,
+				Installments: &InstallmentsInput{Periodicity: "monthly", Total: 12},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(svc.batchParams) != 1 || svc.batchParams[0].Installments == nil {
+		t.Fatalf("installments not forwarded: %+v", svc.batchParams)
+	}
+	if svc.batchParams[0].Installments.Total != 12 {
+		t.Errorf("total = %d, want 12", svc.batchParams[0].Installments.Total)
+	}
+}
+
+func TestCreateTransactionsHandler_PropagatesTopLevelError(t *testing.T) {
+	svc := &fakeTransactionSvc{batchErr: domain.ErrValidation}
+	h := createTransactionsHandler(svc)
+	_, _, err := h(context.Background(), &mcpsdk.CallToolRequest{}, CreateTransactionsInput{})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("err = %v, want ErrValidation", err)
 	}
 }
